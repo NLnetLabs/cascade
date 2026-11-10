@@ -87,8 +87,6 @@ impl Spec {
                 maintenance_mode,
                 instances,
                 source,
-                min_expiration,
-                next_min_expiration,
                 apex_remove,
                 apex_extra,
                 key_tags,
@@ -117,8 +115,6 @@ impl Spec {
                 Ok(ZoneState {
                     policy,
                     instances: instances.parse(),
-                    min_expiration,
-                    next_min_expiration,
                     apex_remove,
                     apex_extra,
                     key_tags,

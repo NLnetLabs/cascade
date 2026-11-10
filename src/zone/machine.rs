@@ -425,8 +425,6 @@ impl<'a> ZoneHandle<'a> {
 
         // Abandon the entire upcoming instance.
         self.state.instances.abandon();
-        // TODO: This should be handled by 'Instances'.
-        self.state.next_min_expiration = None;
 
         self.storage()
             .start_rewinding_review(loaded_reviewer, signed_reviewer);
@@ -468,9 +466,6 @@ impl<'a> ZoneHandle<'a> {
         let viewer = self.storage().finish_signed_persistence(persisted);
 
         self.state.instances.switch();
-        // TODO: Handle this with `Instances`.
-        self.state.min_expiration = self.state.next_min_expiration;
-        self.state.next_min_expiration = None;
 
         let serial = self
             .state
@@ -515,8 +510,6 @@ impl<'a> ZoneHandle<'a> {
 
                 self.signer().before_signed_abandonment();
                 self.state.instances.abandon();
-                // TODO: This should be handled by 'Instances'.
-                self.state.next_min_expiration = None;
 
                 let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
                 self.storage()
@@ -525,9 +518,6 @@ impl<'a> ZoneHandle<'a> {
             ZoneStateMachine::SigningFailed(signing_failed) => {
                 let waiting = signing_failed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
-
-                // TODO: This should be handled by 'Instances'.
-                self.state.next_min_expiration = None;
 
                 self.state.instances.abandon();
 

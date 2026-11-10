@@ -232,7 +232,6 @@ fn test_full(test_idx: usize, input_idx: usize, denial: SignerDenialSpec) {
         key_tags: Default::default(),
         key_roll: None,
         previous_serial: None,
-        next_min_expiration: None,
     };
 
     super::full::sign_zone(
