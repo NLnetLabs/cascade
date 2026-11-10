@@ -110,7 +110,7 @@ runs:
 
     - name: Add a custom policy
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
         cascade template policy | grep -Ev '(send-notify-to|provide-xfr-to)' > "${POLICY_DIR}/restricted.toml"
         if [ "${{ inputs.provide-xfr-to }}" != "" ]; then
           echo 'provide-xfr-to = ["${{ inputs.provide-xfr-to }}"]' >> "${POLICY_DIR}/restricted.toml"
@@ -159,7 +159,7 @@ runs:
       # Only necessary if NOTIFY is not setup for cascade
       if: ${{ inputs.send-notify-to == '' }}
       run: |
-        ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer ${{ steps.set-vars.outputs.ZONE_NAME }}
+        ./scripts/manage-test-environment.sh control nsd-secondary transfer ${{ steps.set-vars.outputs.ZONE_NAME }}
 
     - name: The ${{ steps.set-vars.outputs.ZONE_NAME }} zone should now be available via the secondary
       if: ${{ steps.set-expected-outcome.output.SUCCESS }}

@@ -46,8 +46,8 @@ runs:
 
     - name: Create a manual signed review policy.
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        TEST_DIR="${PWD}/integration-tests/persist-then-reject"
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/persist-then-reject"
         cp "${TEST_DIR}/policies/manual-signed-review.toml" "${POLICY_DIR}/"
         cascade policy reload
 
