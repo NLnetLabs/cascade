@@ -18,7 +18,7 @@ Cascade
       :target: https://social.nlnetlabs.nl/@nlnetlabs
 
 Cascade is a friendly, standalone :doc:`DNSSEC <intro>` signing solution
-from NLnet Labs. It automates key management and :term:`zone` signing while keeping
+from NLnet Labs. It automates key management and zone signing while keeping
 operators informed and in control.
 
 Cascade is currently in **beta**. It is ready for testing and evaluation,
