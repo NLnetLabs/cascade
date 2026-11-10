@@ -15,7 +15,7 @@ use crate::{
     persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{SignedInstanceId, Zone, ZoneHandle, ZoneState},
     zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
 };
 
@@ -41,6 +41,90 @@ impl ZonePersistenceHandle<'_> {
             state: self.state,
             center: self.center,
         }
+    }
+
+    fn abandon_loaded_restoration(&mut self, restorer: LoadedZoneRestorer) {
+        self.reset_state_due_to_abandoned_restore();
+        let (loaded_reviewer, signed_reviewer, viewer) =
+            self.zone().storage().abandon_loaded_restoration(restorer);
+
+        // Update the zone servers.
+        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
+        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
+        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
+
+        // Send a notification that the state machine is now passive.
+        self.zone().storage().on_passive();
+
+        self.state.persistence.ongoing.finish();
+    }
+
+    fn abandon_signed_restoration(&mut self, restorer: SignedZoneRestorer) {
+        self.reset_state_due_to_abandoned_restore();
+        let (loaded_reviewer, signed_reviewer, viewer) =
+            self.zone().storage().abandon_signed_restoration(restorer);
+
+        // Update the zone servers.
+        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
+        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
+        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
+
+        // Send a notification that the state machine is now passive.
+        self.zone().storage().on_passive();
+
+        self.state.persistence.ongoing.finish();
+    }
+
+    fn reset_state_due_to_abandoned_restore(&mut self) {
+        self.clear();
+
+        // In case this zone was signed in the past we have to make sure that
+        // any attempt to enqueue a re-signing operation will be skipped as
+        // doing so will fail due to the lack of loaded zone content.
+        // TODO: Find a better way to prevent this issue as changing the
+        // min_expiration timestamps is a very indirect and non-obvious way of
+        // preventing re-signing.
+        self.state.min_expiration = None;
+        self.state.next_min_expiration = None;
+
+        // Also remove any already enqueued signing operation that is blocked
+        // by the ongoing restore as it will otherwise immediately start once
+        // the restore completes.
+        self.zone().signer().cancel_enqueued_signing_operations();
+
+        // TODO: self the error?
+        let _ = self.zone().save_state_now();
+    }
+
+    pub fn clear(&mut self) {
+        for file_info in self
+            .state
+            .persistence
+            .loaded_diffs
+            .diff_infos
+            .iter()
+            .chain(self.state.persistence.signed_diffs.diff_infos.iter())
+        {
+            if file_info.path.exists()
+                && file_info
+                    .path
+                    .starts_with(self.center.config.zone_state_dir.as_std_path())
+            {
+                info!(
+                    "Removing persisted zone data file '{}'",
+                    file_info.path.display()
+                );
+                if let Err(err) = std::fs::remove_file(&file_info.path) {
+                    warn!(
+                        "Failed to remove persisted zone data file '{}': {err}",
+                        file_info.path.display()
+                    );
+                }
+            }
+        }
+        self.state.persistence.loaded_diffs.clear();
+        self.state.persistence.signed_diffs.clear();
+        self.state.storage.diffs.clear();
     }
 
     /// Compact persisted data for the zone.
@@ -84,7 +168,9 @@ impl ZonePersistenceHandle<'_> {
 
                 // Try to restore the loaded instance.
                 let mut restorer = restorer;
-                let restored = match super::restore_loaded(&zone, &center, &mut restorer) {
+                let result = super::restore_loaded(&zone, &center, &mut restorer);
+                let mut handle = zone.write_handle(&center);
+                let restored = match result {
                     Ok(true) => {
                         // Data was restored. Use it.
                         restorer.finish().unwrap_or_else(|_| {
@@ -93,25 +179,25 @@ impl ZonePersistenceHandle<'_> {
                     }
                     Ok(false) => {
                         // There was nothing to restore.
-                        abandon_loaded_restoration(&center, &zone, restorer);
+                        handle.persistence().abandon_loaded_restoration(restorer);
                         return;
                     }
                     Err(err) => {
                         warn!("Abandoning loaded restoration: {err}");
-                        abandon_loaded_restoration(&center, &zone, restorer);
+                        handle.persistence().abandon_loaded_restoration(restorer);
                         return;
                     }
                 };
 
                 // Obtain the signed zone restorer.
-                let mut restorer = {
-                    zone.write_handle(&center)
-                        .storage()
-                        .finish_loaded_restoration(restored)
-                };
+                let mut restorer = handle.storage().finish_loaded_restoration(restored);
+
+                std::mem::drop(handle);
 
                 // Try to restore the signed instance.
-                let restored = match super::restore_signed(&zone, &center, &mut restorer) {
+                let result = super::restore_signed(&zone, &center, &mut restorer);
+                let mut handle = zone.write_handle(&center);
+                let restored = match result {
                     Ok(true) => {
                         // Data was restored. Use it.
                         restorer.finish().unwrap_or_else(|_| {
@@ -120,17 +206,16 @@ impl ZonePersistenceHandle<'_> {
                     }
                     Ok(false) => {
                         // There was nothing to restore.
-                        abandon_signed_restoration(&center, &zone, restorer);
+                        handle.persistence().abandon_signed_restoration(restorer);
                         return;
                     }
                     Err(err) => {
                         warn!("Abandoning signed restoration: {err}");
-                        abandon_signed_restoration(&center, &zone, restorer);
+                        handle.persistence().abandon_signed_restoration(restorer);
                         return;
                     }
                 };
 
-                let mut handle = zone.write_handle(&center);
                 trace!(
                     "Restored diffs: {:?}",
                     handle.state.persistence.loaded_diffs
@@ -222,70 +307,6 @@ impl ZonePersistenceHandle<'_> {
     }
 }
 
-fn abandon_loaded_restoration(
-    center: &Arc<Center>,
-    zone: &Arc<Zone>,
-    restorer: LoadedZoneRestorer,
-) {
-    reset_state_due_to_abandoned_restore(center, zone);
-    let mut handle = zone.write_handle(center);
-    let (loaded_reviewer, signed_reviewer, viewer) =
-        handle.storage().abandon_loaded_restoration(restorer);
-
-    // Update the zone servers.
-    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
-    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
-    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
-
-    // Send a notification that the state machine is now passive.
-    handle.storage().on_passive();
-
-    handle.state.persistence.ongoing.finish();
-}
-
-fn abandon_signed_restoration(
-    center: &Arc<Center>,
-    zone: &Arc<Zone>,
-    restorer: SignedZoneRestorer,
-) {
-    reset_state_due_to_abandoned_restore(center, zone);
-    let mut handle = zone.write_handle(center);
-    let (loaded_reviewer, signed_reviewer, viewer) =
-        handle.storage().abandon_signed_restoration(restorer);
-
-    // Update the zone servers.
-    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
-    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
-    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
-
-    // Send a notification that the state machine is now passive.
-    handle.storage().on_passive();
-
-    handle.state.persistence.ongoing.finish();
-}
-
-fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
-    PersistenceState::clear(center, zone);
-    let mut handle = zone.write_handle(center);
-
-    // In case this zone was signed in the past we have to make sure that
-    // any attempt to enqueue a re-signing operation will be skipped as
-    // doing so will fail due to the lack of loaded zone content.
-    // TODO: Find a better way to prevent this issue as changing the
-    // min_expiration timestamps is a very indirect and non-obvious way of
-    // preventing re-signing.
-    handle.state.min_expiration = None;
-    handle.state.next_min_expiration = None;
-
-    // Also remove any already enqueued signing operation that is blocked
-    // by the ongoing restore as it will otherwise immediately start once
-    // the restore completes.
-    handle.signer().cancel_enqueued_signing_operations();
-
-    // TODO: Handle the error?
-    let _ = handle.get().save_state_now();
-}
-
 //----------- PersistenceState -----------------------------------------------
 
 /// State related to data persistence for a zone.
@@ -305,6 +326,13 @@ fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) 
 pub struct PersistenceState {
     /// Ongoing persist/restore operations.
     pub ongoing: BackgroundTasks,
+
+    /// The ID of an instance whose snapshot has been persisted to disk.
+    ///
+    /// If this is [`Some`], snapshots of the loaded and signed instance have
+    /// been persisted to disk. When Cascade restarts, they will be used to
+    /// restore zone data. The field is cleared if the snapshots are unusable.
+    pub snapshot_id: Option<SignedInstanceId>,
 
     /// Metadata about the persisted loaded zone data files for a zone.
     pub loaded_diffs: PersistedDiffManager,
@@ -371,173 +399,142 @@ impl PersistenceState {
             return;
         };
 
-        if let Some(reader) = viewer.read() {
-            // TODO: The steps below if interrupted (e.g. by crash, OOM
-            // kill, system failure or power outage) could lead to zone data
-            // corruption on restore. One possible solution could be to write
-            // persisted records for a zone to a directory specific to that
-            // zone, and during compaction create a new directory with all
-            // the necessary data then update in state on disk the path to
-            // the directory to use to be the new directory and delete the
-            // old directory.
-            debug!(
-                "Writing loaded zone snapshot to {}",
-                loaded_snapshot_path.display()
-            );
-            persist_to_file_from_parts(
-                loaded_snapshot_path,
-                None,
-                reader.loaded().soa().clone(),
-                [].iter(),
-                reader.loaded().regular_records().iter(),
-            );
+        let Some(reader) = viewer.read() else { return };
 
-            debug!(
-                "Writing new signed zone snapshot to {}",
-                signed_snapshot_path.display()
-            );
-            persist_to_file_from_parts(
-                signed_snapshot_path,
-                None,
-                reader.soa().clone(),
-                [].iter(),
-                reader.generated_records().iter(),
-            );
+        // TODO: The steps below if interrupted (e.g. by crash, OOM
+        // kill, system failure or power outage) could lead to zone data
+        // corruption on restore. One possible solution could be to write
+        // persisted records for a zone to a directory specific to that
+        // zone, and during compaction create a new directory with all
+        // the necessary data then update in state on disk the path to
+        // the directory to use to be the new directory and delete the
+        // old directory.
+        debug!(
+            "Writing loaded zone snapshot to {}",
+            loaded_snapshot_path.display()
+        );
+        persist_to_file_from_parts(
+            loaded_snapshot_path,
+            None,
+            reader.loaded().soa().clone(),
+            [].iter(),
+            reader.loaded().regular_records().iter(),
+        );
 
-            // Now that we have re-written the snapshots using the latest
-            // published version of the zone we don't need any of the on-disk
-            // persisted diffs that were previously applied on top of the old
-            // snapshot to re-create the zone.
-            //
-            // We might still however need some of those on-disk diffs so that
-            // we can reload them on startup to be able to serve them as IXFR
-            // diffs to downstream nameservers.
-            //
-            // Check which ones we can delete and after deleting them update
-            // our record of the first on-disk diff file that should be
-            // applied on top of the updated snapshot.
+        debug!(
+            "Writing new signed zone snapshot to {}",
+            signed_snapshot_path.display()
+        );
+        persist_to_file_from_parts(
+            signed_snapshot_path,
+            None,
+            reader.soa().clone(),
+            [].iter(),
+            reader.generated_records().iter(),
+        );
 
-            // Remove the first N oldest signed diffs and their corresponding
-            // loaded diffs. Skip the first "diff" as it is the snapshot, not
-            // a diff.
-            let mut idx = 0;
-            let mut loaded_serials_to_remove = vec![];
-            state
-                    .persistence
-                    .signed_diffs
-                    .diff_infos
-                    .retain(|diff_info| {
-                        // Keep only the snapshot and diffs newer than the
-                        // ones to remove.
-                        let keep = idx == 0 || idx > num_diffs_to_remove;
-                        trace!("Compaction for zone '{}': removing {num_diffs_to_remove} diffs: retain diff #{idx}: {keep}", zone.name);
-                        idx += 1;
+        // Now that we have re-written the snapshots using the latest
+        // published version of the zone we don't need any of the on-disk
+        // persisted diffs that were previously applied on top of the old
+        // snapshot to re-create the zone.
+        //
+        // We might still however need some of those on-disk diffs so that
+        // we can reload them on startup to be able to serve them as IXFR
+        // diffs to downstream nameservers.
+        //
+        // Check which ones we can delete and after deleting them update
+        // our record of the first on-disk diff file that should be
+        // applied on top of the updated snapshot.
 
-                        if !keep {
-                            // Remove the corresponding loaded diff.
-                            if let Some(loaded_serial) = diff_info.loaded_serial {
-                                loaded_serials_to_remove.push(loaded_serial);
-                            }
-                            if let Err(err) = std::fs::remove_file(&diff_info.path) {
-                                warn!(
-                                    "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
-                                    zone.name, diff_info.path.display()
-                                );
-                            }
-                        }
-                        keep
-                    });
+        // Remove the first N oldest signed diffs and their corresponding
+        // loaded diffs. Skip the first "diff" as it is the snapshot, not
+        // a diff.
+        let mut idx = 0;
+        let mut loaded_serials_to_remove = vec![];
+        state
+            .persistence
+            .signed_diffs
+            .diff_infos
+            .retain(|diff_info| {
+                // Keep only the snapshot and diffs newer than the
+                // ones to remove.
+                let keep = idx == 0 || idx > num_diffs_to_remove;
+                trace!("Compaction for zone '{}': removing {num_diffs_to_remove} diffs: retain diff #{idx}: {keep}", zone.name);
+                idx += 1;
 
-            // Remove the corresponding loaded diffs.
-            for loaded_serial in loaded_serials_to_remove {
-                if let Some(found_item) = state
-                    .persistence
-                    .loaded_diffs
-                    .diffs()
-                    .iter()
-                    .find(|item| item.loaded_serial == Some(loaded_serial))
-                    .cloned()
-                {
-                    trace!(
-                        "Compaction for zone '{}': removing loaded diff for loaded serial {loaded_serial}",
-                        zone.name
-                    );
-                    let _ = state
-                        .persistence
-                        .loaded_diffs
-                        .diff_infos
-                        .remove(&found_item);
-                    if let Err(err) = std::fs::remove_file(&found_item.path) {
+                if !keep {
+                    // Remove the corresponding loaded diff.
+                    if let Some(loaded_serial) = diff_info.loaded_serial {
+                        loaded_serials_to_remove.push(loaded_serial);
+                    }
+                    if let Err(err) = std::fs::remove_file(&diff_info.path) {
                         warn!(
                             "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
-                            zone.name,
-                            found_item.path.display()
+                            zone.name, diff_info.path.display()
                         );
                     }
                 }
-            }
+                keep
+            });
 
-            // As we may have folded diffs into the snapshot, upon next
-            // restoration the first diff to apply to the snapshot is no
-            // longer the first after the snapshot but the first after
-            // we skip diffs that have been retained for responding to IXFR
-            // requests but are now part of the snapshot.
-            //
-            // Update the index of the first diff to apply on restore to
-            // account for the compaction done above.
-            state
+        // Remove the corresponding loaded diffs.
+        for loaded_serial in loaded_serials_to_remove {
+            if let Some(found_item) = state
                 .persistence
                 .loaded_diffs
-                .first_diff_to_apply_on_restore = state.persistence.loaded_diffs.len();
-            state
-                .persistence
-                .signed_diffs
-                .first_diff_to_apply_on_restore = state.persistence.signed_diffs.len();
-            trace!(
-                "Compaction complete: next_idx: loaded={}, signed={}, restore_base_idx: loaded={}, signed={}",
-                state.persistence.loaded_diffs.next_uniqifier,
-                state.persistence.signed_diffs.next_uniqifier,
-                state
+                .diffs()
+                .iter()
+                .find(|item| item.loaded_serial == Some(loaded_serial))
+                .cloned()
+            {
+                trace!(
+                    "Compaction for zone '{}': removing loaded diff for loaded serial {loaded_serial}",
+                    zone.name
+                );
+                let _ = state
                     .persistence
                     .loaded_diffs
-                    .first_diff_to_apply_on_restore,
-                state
-                    .persistence
-                    .signed_diffs
-                    .first_diff_to_apply_on_restore
-            );
-        }
-    }
-
-    pub fn clear(center: &Arc<Center>, zone: &Arc<Zone>) {
-        let mut state = zone.write(center);
-        for file_info in state
-            .persistence
-            .loaded_diffs
-            .diff_infos
-            .iter()
-            .chain(state.persistence.signed_diffs.diff_infos.iter())
-        {
-            if file_info.path.exists()
-                && file_info
-                    .path
-                    .starts_with(center.config.zone_state_dir.as_std_path())
-            {
-                info!(
-                    "Removing persisted zone data file '{}'",
-                    file_info.path.display()
-                );
-                if let Err(err) = std::fs::remove_file(&file_info.path) {
+                    .diff_infos
+                    .remove(&found_item);
+                if let Err(err) = std::fs::remove_file(&found_item.path) {
                     warn!(
-                        "Failed to remove persisted zone data file '{}': {err}",
-                        file_info.path.display()
+                        "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
+                        zone.name,
+                        found_item.path.display()
                     );
                 }
             }
         }
-        state.persistence.loaded_diffs.clear();
-        state.persistence.signed_diffs.clear();
-        state.storage.diffs.clear();
+
+        // As we may have folded diffs into the snapshot, upon next
+        // restoration the first diff to apply to the snapshot is no
+        // longer the first after the snapshot but the first after
+        // we skip diffs that have been retained for responding to IXFR
+        // requests but are now part of the snapshot.
+        //
+        // Update the index of the first diff to apply on restore to
+        // account for the compaction done above.
+        state
+            .persistence
+            .loaded_diffs
+            .first_diff_to_apply_on_restore = state.persistence.loaded_diffs.len();
+        state
+            .persistence
+            .signed_diffs
+            .first_diff_to_apply_on_restore = state.persistence.signed_diffs.len();
+        trace!(
+            "Compaction complete: next_idx: loaded={}, signed={}, restore_base_idx: loaded={}, signed={}",
+            state.persistence.loaded_diffs.next_uniqifier,
+            state.persistence.signed_diffs.next_uniqifier,
+            state
+                .persistence
+                .loaded_diffs
+                .first_diff_to_apply_on_restore,
+            state
+                .persistence
+                .signed_diffs
+                .first_diff_to_apply_on_restore
+        );
     }
 }
 
@@ -545,6 +542,7 @@ impl Default for PersistenceState {
     fn default() -> Self {
         Self {
             ongoing: Default::default(),
+            snapshot_id: None,
             loaded_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Loaded),
             signed_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Signed),
         }
