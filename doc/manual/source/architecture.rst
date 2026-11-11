@@ -1,7 +1,7 @@
 Architecture
 ============
 
-Cascade's core pipeline runs in a single :program:`cascaded` daemon. Within
+Cascade's core pipeline runs in a single daemon called :program:`cascaded`. Within
 that process, separate components load zones, coordinate key management, sign
 and review zone versions, persist approved data, and serve published zones.
 
