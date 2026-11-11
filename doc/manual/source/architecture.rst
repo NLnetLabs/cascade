@@ -12,10 +12,12 @@ Cascade has two separate models of operation working simultaniously:
 #. Passive per-zone pipelines whose current state determine what is or isn't
    allowed to happen next.
 
-Each zone has its own state machine. A zone advances through one pipeline
-operation at a time, while Cascade can perform work for different zones
-concurrently. The currently published version remains available while a newer
-version is loaded, reviewed, signed, and persisted.
+Cascade's architecture is focused on making it easy to track what's
+happening with your zones at any given point in time, and ensure integrity
+at all times. This is why each zone has its own state machine. A zone
+advances through one pipeline operation at a time, while Cascade can perform
+work for different zones concurrently. The currently published version remains
+available while a newer version is loaded, reviewed, signed, and persisted.
 
 The Zone Pipeline
 -----------------
