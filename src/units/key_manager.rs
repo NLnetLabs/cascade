@@ -605,10 +605,10 @@ impl KeyManager {
         // server.
         let policy;
 
-	// Compile a list of KMIP server IDs. Also keep track of a
-	// default KMIP server ID.
+        // Compile a list of KMIP server IDs. Also keep track of a
+        // default KMIP server ID.
         let mut kmip_server_ids = HashSet::new();
-	let kmip_default_id;
+        let kmip_default_id;
         {
             let state = center.state.lock().unwrap();
             policy = state
@@ -617,18 +617,14 @@ impl KeyManager {
                 .ok_or(ZoneAddError::NoSuchPolicy)?
                 .clone();
             kmip_default_id = policy.latest.key_manager.hsm_server_id.clone();
-	    if let Some(id) = &kmip_default_id {
-		kmip_server_ids.insert(id.to_string());
-	    }
+            if let Some(id) = &kmip_default_id {
+                kmip_server_ids.insert(id.to_string());
+            }
         }
-	for key in key_imports.iter()
-	{
-	    if let KeyImport::Kmip(KmipKeyImport {
-                server,
-                ..
-            }) = key {
-		kmip_server_ids.insert(server.to_string());
-	    }
+        for key in key_imports.iter() {
+            if let KeyImport::Kmip(KmipKeyImport { server, .. }) = key {
+                kmip_server_ids.insert(server.to_string());
+            }
         }
 
         let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &name);
@@ -650,7 +646,7 @@ impl KeyManager {
         // resolving whatever failure occurred below will then fail because
         // the `dnst keyset create`d state already exists?
 
-	for id in kmip_server_ids {
+        for id in kmip_server_ids {
             let args = keyset_kmip_add_server_cmd(&id, center, false).map_err(|err| {
                 ZoneAddError::Other(format!("keyset_kmip_add_server_cmd failed: {err}"))
             })?;
@@ -665,7 +661,7 @@ impl KeyManager {
                 .await
                 .map_err(|err| ZoneAddError::Other(err.err))?;
         }
-	if let Some(id) = kmip_default_id {
+        if let Some(id) = kmip_default_id {
             let args = keyset_kmip_set_default_cmd(&id);
 
             let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
@@ -677,7 +673,7 @@ impl KeyManager {
             cmd.output()
                 .await
                 .map_err(|err| ZoneAddError::Other(err.err))?;
-	}
+        }
 
         // Pass `set` and `import` commands to `dnst keyset`.
         let config_commands = imports_to_commands(key_imports).into_iter().chain(
@@ -1641,7 +1637,7 @@ fn keyset_kmip_add_server_cmd(
     ];
 
     if !default {
-	args.push("--pending".to_string());
+        args.push("--pending".to_string());
     }
 
     if has_credentials {
@@ -1662,12 +1658,6 @@ fn keyset_kmip_add_server_cmd(
     Ok(args)
 }
 
-fn keyset_kmip_set_default_cmd(
-    kmip_server_id: &str,
-) -> Vec<String> {
-    strs![
-        "kmip",
-        "set-default-server",
-        kmip_server_id.to_string(),
-    ]
+fn keyset_kmip_set_default_cmd(kmip_server_id: &str) -> Vec<String> {
+    strs!["kmip", "set-default-server", kmip_server_id.to_string(),]
 }
