@@ -793,12 +793,15 @@ impl InstancesSpec {
             upcoming: _,
             ref current,
             ref obsolete,
-            persisted: _,
+            ref persisted,
             next_loaded_id,
         } = *instances;
 
         Self {
-            current: current.as_ref().map(CurrentInstanceSpec::build),
+            current: current
+                .as_ref()
+                .map(CurrentInstanceSpec::build_current)
+                .or(persisted.as_ref().map(CurrentInstanceSpec::build_persisted)),
             obsolete: ObsoleteInstancesSpec::build(obsolete),
             next_loaded_id,
         }
@@ -837,9 +840,24 @@ impl CurrentInstanceSpec {
         }
     }
 
-    /// Build into this specification.
-    pub fn build(instance: &CurrentInstance) -> Self {
+    /// Build from a [`CurrentInstance`].
+    pub fn build_current(instance: &CurrentInstance) -> Self {
         let CurrentInstance {
+            ref loaded,
+            ref signed,
+            pub_time,
+        } = *instance;
+
+        Self {
+            loaded: LoadedInstanceSpec::build(loaded),
+            signed: SignedInstanceSpec::build(signed),
+            pub_time,
+        }
+    }
+
+    /// Build from a [`PersistedInstance`].
+    pub fn build_persisted(instance: &PersistedInstance) -> Self {
+        let PersistedInstance {
             ref loaded,
             ref signed,
             pub_time,

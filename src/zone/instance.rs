@@ -79,8 +79,7 @@ pub struct Instances {
     /// This is set when Cascade restarts after persisting the zone to disk.
     /// This field stores the zone that _was_ the current/published instance;
     /// it will be moved to [`Self::current`] if/when restoration succeeds. If
-    /// restoration fails, it remains untouched here; thus this field is never
-    /// modified.
+    /// restoration fails, it is moved to [`Self::obsolete`].
     pub persisted: Option<PersistedInstance>,
 
     /// The next usable loaded instance ID.
@@ -401,10 +400,36 @@ impl Instances {
 
         let persisted = self
             .persisted
-            .as_ref()
+            .take()
             .unwrap_or_else(|| panic!("There is no persisted instance"));
 
-        self.current = Some(persisted.to_current());
+        self.current = Some(persisted.into_current());
+    }
+
+    /// Mark the persisted instance as obsolete.
+    pub fn obsolete_persisted(&mut self) {
+        let Some(PersistedInstance {
+            loaded,
+            signed,
+            pub_time: _,
+        }) = self.persisted.take()
+        else {
+            // There was no persisted instance.
+            return;
+        };
+        let signed = ObsoleteSignedInstance {
+            inner: signed,
+            diff_into_next: None,
+        };
+        self.obsolete.latest_signed.push_back(signed);
+        let loaded = ObsoleteLoadedInstance {
+            inner: loaded,
+            diff_into_next: None,
+        };
+        let signed = std::mem::take(&mut self.obsolete.latest_signed);
+        self.obsolete
+            .per_load
+            .push_back(ObsoleteInstancesPerLoad { loaded, signed });
     }
 }
 
@@ -426,6 +451,10 @@ impl Instances {
             current.check_invariants();
         }
         self.obsolete.check_invariants();
+        assert!(
+            current.is_none() || persisted.is_none(),
+            "The persisted instance must become current or obsolete"
+        );
         if let Some(persisted) = &persisted {
             persisted.check_invariants();
         }
@@ -904,12 +933,12 @@ pub struct PersistedInstance {
 
 impl PersistedInstance {
     /// Build a [`CurrentInstance`] out of `self`.
-    pub fn to_current(&self) -> CurrentInstance {
+    pub fn into_current(self) -> CurrentInstance {
         let Self {
             loaded,
             signed,
             pub_time,
-        } = self.clone();
+        } = self;
 
         CurrentInstance {
             loaded,
