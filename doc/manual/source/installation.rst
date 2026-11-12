@@ -4,8 +4,8 @@ Installation
 Prerequisites
 -------------
 
-Cascade requires :program:`dnst` 0.3.0 or newer. The Cascade DEB and RPM
-packages install a compatible version automatically.
+Cascade depends a specific version of :program:`dnst`. The Cascade DEB and RPM
+packages install the correct version automatically.
 
 Before installing Cascade, review :doc:`before-you-start` for its deployment,
 network, and resource requirements.
