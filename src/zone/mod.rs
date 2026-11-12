@@ -244,6 +244,8 @@ impl ZoneHandle<'_> {
     ///
     /// When the function returns, the state will be saved to disk.
     pub fn save_state_now(&mut self) -> io::Result<()> {
+        self.state.check_invariants();
+
         // Determine the save path from the global state.
         let name = &self.zone.name;
         let path = self.center.config.zone_state_dir.join(format!("{name}.db"));
@@ -463,6 +465,30 @@ impl ZoneState {
             (Some(i), None) => Some(&i.signed),
             (Some(_), Some(i)) => Some(&i.signed),
         }
+    }
+
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        let Self {
+            instances,
+            machine: _,                // TODO
+            policy: _,                 // TODO
+            maintenance_mode: _,       // TODO
+            enqueued_save: _,          // TODO
+            apex_remove: _,            // TODO
+            apex_extra: _,             // TODO
+            key_tags: _,               // TODO
+            key_roll: _,               // TODO
+            last_signature_refresh: _, // TODO
+            previous_serial: _,        // TODO
+            history: _,                // TODO
+            loader: _,                 // TODO
+            signer: _,                 // TODO
+            storage: _,                // TODO
+            persistence: _,            // TODO
+        } = self;
+
+        instances.check_invariants();
     }
 }
 
@@ -714,6 +740,8 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
     // Load the actual zone contents.
     let spec = {
         let mut state = zone.state.write_cleanly();
+
+        state.check_invariants();
 
         // If there was an enqueued save operation, stop it.
         if let Some(save) = state.enqueued_save.take() {
