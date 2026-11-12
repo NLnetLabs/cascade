@@ -307,12 +307,12 @@ impl Instances {
                     pub_time,
                 });
 
-                self.obsolete.instances.push_back(ObsoleteInstance::Signed(
-                    ObsoleteSignedInstance {
+                self.obsolete
+                    .latest_signed
+                    .push_back(ObsoleteSignedInstance {
                         inner: old_signed,
-                        diff: Some(signed_diff),
-                    },
-                ));
+                        diff_into_next: Some(signed_diff),
+                    });
             }
 
             // A new loaded instance has appeared.
@@ -341,19 +341,22 @@ impl Instances {
                     pub_time: _,
                 }) = old
                 {
-                    // The loaded instance must be added first.
-                    self.obsolete.instances.push_back(ObsoleteInstance::Loaded(
-                        ObsoleteLoadedInstance {
-                            inner: old_loaded,
-                            diff: Some(loaded_diff),
-                        },
-                    ));
-                    self.obsolete.instances.push_back(ObsoleteInstance::Signed(
-                        ObsoleteSignedInstance {
+                    self.obsolete
+                        .latest_signed
+                        .push_back(ObsoleteSignedInstance {
                             inner: old_signed,
-                            diff: Some(signed_diff),
-                        },
-                    ));
+                            diff_into_next: Some(signed_diff),
+                        });
+
+                    let loaded = ObsoleteLoadedInstance {
+                        inner: old_loaded,
+                        diff_into_next: Some(loaded_diff),
+                    };
+                    let signed = std::mem::take(&mut self.obsolete.latest_signed);
+
+                    self.obsolete
+                        .per_load
+                        .push_back(ObsoleteInstancesPerLoad { loaded, signed });
                 }
             }
 
@@ -584,27 +587,30 @@ impl CurrentInstance {
 /// IXFRs.
 #[derive(Clone, Debug, Default)]
 pub struct ObsoleteInstances {
-    /// The instances, from oldest to newest.
-    ///
-    /// This list contains loaded and signed instances. Each loaded instance
-    /// is followed by the (zero or more) signed instances relative to it.
-    /// Thus, signed instances are relative to the _closest preceding_ loaded
-    /// instance, as confirmed by their IDs.
+    /// The instances, from oldest to newest, grouped by loaded instance.
     ///
     /// A [`VecDeque`] is used so that old instances can be removed easily.
-    /// Every signed instance must be preceded by a loaded instance, so care
-    /// must be taken when removing an old loaded instance.
-    pub instances: VecDeque<ObsoleteInstance>,
+    pub per_load: VecDeque<ObsoleteInstancesPerLoad>,
+
+    /// Signed instances paired with the current/persisted loaded instance.
+    ///
+    /// These instances cannot be stored in [`Self::per_load`] because the
+    /// associated loaded instance is not obsolete yet.
+    ///
+    /// A [`VecDeque`] is used so that old instances can be removed easily.
+    pub latest_signed: VecDeque<ObsoleteSignedInstance>,
 }
 
-/// An obsolete instance.
-#[derive(Debug, Clone)]
-pub enum ObsoleteInstance {
-    /// An obsolete loaded instance.
-    Loaded(ObsoleteLoadedInstance),
+/// Obsolete instances per loaded instance.
+#[derive(Clone, Debug)]
+pub struct ObsoleteInstancesPerLoad {
+    /// The loaded instance.
+    pub loaded: ObsoleteLoadedInstance,
 
-    /// An obsolete signed instance.
-    Signed(ObsoleteSignedInstance),
+    /// The signed instances, from oldest to newest.
+    ///
+    /// A [`VecDeque`] is used so that old instances can be removed easily.
+    pub signed: VecDeque<ObsoleteSignedInstance>,
 }
 
 //----------- ObsoleteLoadedInstance -------------------------------------------
@@ -623,7 +629,7 @@ pub struct ObsoleteLoadedInstance {
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
-    pub diff: Option<Arc<DiffData>>,
+    pub diff_into_next: Option<Arc<DiffData>>,
 }
 
 impl Deref for ObsoleteLoadedInstance {
@@ -642,11 +648,17 @@ impl DerefMut for ObsoleteLoadedInstance {
 
 impl fmt::Debug for ObsoleteLoadedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { inner, diff } = self;
+        let Self {
+            inner,
+            diff_into_next,
+        } = self;
         f.debug_struct("ObsoleteLoadedInstance")
             .field("inner", inner)
             // Hide the diff.
-            .field("diff", &diff.as_ref().map(|_| format_args!("...")))
+            .field(
+                "diff_into_next",
+                &diff_into_next.as_ref().map(|_| format_args!("...")),
+            )
             .finish()
     }
 }
@@ -667,7 +679,7 @@ pub struct ObsoleteSignedInstance {
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
-    pub diff: Option<Arc<DiffData>>,
+    pub diff_into_next: Option<Arc<DiffData>>,
 }
 
 impl Deref for ObsoleteSignedInstance {
@@ -686,11 +698,17 @@ impl DerefMut for ObsoleteSignedInstance {
 
 impl fmt::Debug for ObsoleteSignedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { inner, diff } = self;
+        let Self {
+            inner,
+            diff_into_next,
+        } = self;
         f.debug_struct("ObsoleteSignedInstance")
             .field("inner", inner)
             // Hide the diff.
-            .field("diff", &diff.as_ref().map(|_| format_args!("...")))
+            .field(
+                "diff_into_next",
+                &diff_into_next.as_ref().map(|_| format_args!("...")),
+            )
             .finish()
     }
 }

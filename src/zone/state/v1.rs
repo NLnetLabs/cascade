@@ -27,8 +27,8 @@ use crate::persistence::zone::{
 use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
 use crate::zone::instance::{
-    CurrentInstance, LoadedInstanceId, ObsoleteInstance, ObsoleteInstances, ObsoleteLoadedInstance,
-    ObsoleteSignedInstance, PersistedInstance, SignedInstanceId,
+    CurrentInstance, LoadedInstanceId, ObsoleteInstances, ObsoleteInstancesPerLoad,
+    ObsoleteLoadedInstance, ObsoleteSignedInstance, PersistedInstance, SignedInstanceId,
 };
 use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
 use crate::{
@@ -855,63 +855,86 @@ impl CurrentInstanceSpec {
 
 //----------- ObsoleteInstancesSpec --------------------------------------------
 
-/// Obselete instances of a zone.
+/// Obsolete instances of a zone.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ObsoleteInstancesSpec {
-    /// The instances, from oldest to newest.
-    pub instances: Vec<ObsoleteInstanceSpec>,
+    /// The instances, from oldest to newest, grouped by loaded instance.
+    pub per_load: Vec<ObsoleteInstancesPerLoadSpec>,
+
+    /// Signed instances paired with the current/persisted loaded instance.
+    pub latest_signed: Vec<ObsoleteSignedInstanceSpec>,
 }
 
 impl ObsoleteInstancesSpec {
     /// Parse from this specification.
     pub fn parse(self) -> ObsoleteInstances {
-        let Self { instances } = self;
+        let Self {
+            per_load,
+            latest_signed,
+        } = self;
 
         ObsoleteInstances {
-            instances: instances.into_iter().map(|i| i.parse()).collect(),
+            per_load: per_load.into_iter().map(|i| i.parse()).collect(),
+            latest_signed: latest_signed.into_iter().map(|i| i.parse()).collect(),
         }
     }
 
     /// Build into this specification.
     pub fn build(instances: &ObsoleteInstances) -> Self {
-        let ObsoleteInstances { ref instances } = *instances;
+        let ObsoleteInstances {
+            ref per_load,
+            ref latest_signed,
+        } = *instances;
 
         Self {
-            instances: instances.iter().map(ObsoleteInstanceSpec::build).collect(),
+            per_load: per_load
+                .iter()
+                .map(ObsoleteInstancesPerLoadSpec::build)
+                .collect(),
+            latest_signed: latest_signed
+                .iter()
+                .map(ObsoleteSignedInstanceSpec::build)
+                .collect(),
         }
     }
 }
 
-/// An obsolete instance.
+/// Obsolete instances per loaded instance.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum ObsoleteInstanceSpec {
-    /// An obsolete loaded instance.
-    Loaded(ObsoleteLoadedInstanceSpec),
+pub struct ObsoleteInstancesPerLoadSpec {
+    /// The loaded instance.
+    pub loaded: ObsoleteLoadedInstanceSpec,
 
-    /// An obsolete signed instance.
-    Signed(ObsoleteSignedInstanceSpec),
+    /// The signed instances, from oldest to newest.
+    pub signed: Vec<ObsoleteSignedInstanceSpec>,
 }
 
-impl ObsoleteInstanceSpec {
+impl ObsoleteInstancesPerLoadSpec {
     /// Parse from this specification.
-    pub fn parse(self) -> ObsoleteInstance {
-        match self {
-            Self::Loaded(spec) => ObsoleteInstance::Loaded(spec.parse()),
-            Self::Signed(spec) => ObsoleteInstance::Signed(spec.parse()),
+    pub fn parse(self) -> ObsoleteInstancesPerLoad {
+        let Self { loaded, signed } = self;
+
+        ObsoleteInstancesPerLoad {
+            loaded: loaded.parse(),
+            signed: signed.into_iter().map(|i| i.parse()).collect(),
         }
     }
 
     /// Build into this specification.
-    pub fn build(instance: &ObsoleteInstance) -> Self {
-        match instance {
-            ObsoleteInstance::Loaded(instance) => {
-                Self::Loaded(ObsoleteLoadedInstanceSpec::build(instance))
-            }
-            ObsoleteInstance::Signed(instance) => {
-                Self::Signed(ObsoleteSignedInstanceSpec::build(instance))
-            }
+    pub fn build(instances: &ObsoleteInstancesPerLoad) -> Self {
+        let ObsoleteInstancesPerLoad {
+            ref loaded,
+            ref signed,
+        } = *instances;
+
+        Self {
+            loaded: ObsoleteLoadedInstanceSpec::build(loaded),
+            signed: signed
+                .iter()
+                .map(ObsoleteSignedInstanceSpec::build)
+                .collect(),
         }
     }
 }
@@ -933,13 +956,16 @@ impl ObsoleteLoadedInstanceSpec {
 
         ObsoleteLoadedInstance {
             inner: inner.parse(),
-            diff: None,
+            diff_into_next: None,
         }
     }
 
     /// Build into this specification.
     pub fn build(instance: &ObsoleteLoadedInstance) -> Self {
-        let ObsoleteLoadedInstance { ref inner, diff: _ } = *instance;
+        let ObsoleteLoadedInstance {
+            ref inner,
+            diff_into_next: _,
+        } = *instance;
 
         Self {
             inner: LoadedInstanceSpec::build(inner),
@@ -964,13 +990,16 @@ impl ObsoleteSignedInstanceSpec {
 
         ObsoleteSignedInstance {
             inner: inner.parse(),
-            diff: None,
+            diff_into_next: None,
         }
     }
 
     /// Build into this specification.
     pub fn build(instance: &ObsoleteSignedInstance) -> Self {
-        let ObsoleteSignedInstance { ref inner, diff: _ } = *instance;
+        let ObsoleteSignedInstance {
+            ref inner,
+            diff_into_next: _,
+        } = *instance;
 
         Self {
             inner: SignedInstanceSpec::build(inner),
