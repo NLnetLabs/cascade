@@ -69,6 +69,14 @@ impl DiffData {
             && self.added_records.is_empty()
     }
 
+    /// The total number of records in this diff.
+    pub const fn num_records(&self) -> u64 {
+        self.removed_soa.is_some() as u64
+            + self.added_soa.is_some() as u64
+            + self.removed_records.len() as u64
+            + self.added_records.len() as u64
+    }
+
     /// Iterate over the removed non-SOA records.
     pub fn removed_non_soa<'a>(&'a self, origin: &'a RevName) -> RecordsIter<'a> {
         RecordsIter {

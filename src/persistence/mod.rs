@@ -341,6 +341,10 @@ impl Restorer {
                 // 'restorer' field is moved out over here.
                 let restorer = handle.state.storage.restorer.take().unwrap();
 
+                if let Some(instance) = &handle.state.instances.lost_upcoming {
+                    let _ =
+                        instance.remove_persistence_files(&handle.zone.name, &handle.center.config);
+                }
                 handle.persistence().start_restore(restorer);
             }
         }))

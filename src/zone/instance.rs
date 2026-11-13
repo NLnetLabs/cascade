@@ -32,7 +32,7 @@
 
 use std::{
     collections::VecDeque,
-    fmt,
+    fmt, mem,
     num::NonZeroU64,
     ops::{Deref, DerefMut},
     sync::Arc,
@@ -50,6 +50,12 @@ use domain::{
     },
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use tracing::{debug, error, trace};
+
+use crate::{
+    policy::PolicyVersion,
+    zone::{InMemoryDiffLimits, InMemoryDiffTrimmer},
+};
 
 //----------- Instances --------------------------------------------------------
 
@@ -82,6 +88,9 @@ pub struct Instances {
     /// restoration fails, it remains untouched here; thus this field is never
     /// modified.
     pub persisted: Option<PersistedInstance>,
+
+    /// A lost instance that was being built by Cascade before a restart.
+    pub lost_upcoming: Option<LostUpcomingInstance>,
 
     /// The next usable loaded instance ID.
     pub next_loaded_id: u64,
@@ -273,7 +282,7 @@ impl Instances {
     /// - There is no upcoming instance.
     /// - The upcoming instance is malformed.
     /// - A re-sign took place but there is no current loaded instance.
-    pub fn switch(&mut self) {
+    pub fn switch(&mut self, policy: &PolicyVersion) {
         let pub_time = SystemTime::now();
 
         let upcoming = self
@@ -362,6 +371,9 @@ impl Instances {
                 panic!("The upcoming instance is malformed")
             }
         }
+
+        // New obsolete diffs were added; discard excess ones.
+        self.discard_excess_diffs(policy);
     }
 
     /// Abandon the upcoming instance entirely.
@@ -369,12 +381,14 @@ impl Instances {
     /// ## Panics
     ///
     /// Panics if an upcoming instance does not exist.
-    pub fn abandon(&mut self) {
+    pub fn abandon(&mut self, zone_name: &Name<Bytes>, config: &crate::Config) {
         // TODO: Add the upcoming instance to a list of abandoned ones.
 
-        assert!(self.upcoming.is_some(), "Nothing to abandon");
+        let Some(upcoming) = self.upcoming.take() else {
+            panic!("Nothing to abandon")
+        };
 
-        self.upcoming = None;
+        let _ = upcoming.remove_persistence_files(zone_name, config);
     }
 }
 
@@ -402,6 +416,44 @@ impl Instances {
             .unwrap_or_else(|| panic!("There is no persisted instance"));
 
         self.current = Some(persisted.to_current());
+    }
+}
+
+impl Instances {
+    /// React to a change in zone policy.
+    pub fn after_policy_change(&mut self, old: Option<&PolicyVersion>, new: &PolicyVersion) {
+        // If the limits for in-memory diffs have narrowed, re-trim.
+        if let Some(old) = old
+            && (old.server.outbound.max_diffs <= new.server.outbound.max_diffs
+                || old.server.outbound.max_diffs_size <= new.server.outbound.max_diffs_size)
+        {
+            self.discard_excess_diffs(new);
+        }
+    }
+
+    /// Discard old in-memory diffs exceeding policy limits.
+    pub fn discard_excess_diffs(&mut self, policy: &PolicyVersion) {
+        // Look up information about the current signed instance (or the
+        // persisted one, if it has not been restored yet), as a basis for
+        // policy limits.
+        let latest = if let Some(current) = &self.current {
+            &current.signed
+        } else if let Some(persisted) = &self.persisted {
+            &persisted.signed
+        } else {
+            // We don't have enough information.
+            return;
+        };
+
+        let max_diffs_size_ratio = policy.server.outbound.max_diffs_size as f64 / 100.0;
+        let latest_size = latest.num_records().get();
+        let max_diffs_size = (max_diffs_size_ratio * latest_size as f64) as u64;
+
+        let limits = InMemoryDiffLimits {
+            max_num_diffs: Some(policy.server.outbound.max_diffs as u64),
+            max_num_records: Some(max_diffs_size),
+        };
+        self.obsolete.discard_excess_diffs(limits);
     }
 }
 
@@ -443,6 +495,24 @@ pub struct UpcomingInstance {
     // - The cause of initiation (e.g. reception of DNS NOTIFY).
     // - The policy used for generating the instance.
     //   (with such a field, policy changes during generation can be ignored.)
+}
+
+impl UpcomingInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        // TODO: Propagate error information **without short-circuiting**.
+        if let Some(loaded) = &self.loaded {
+            let _ = loaded.remove_persistence_files(zone_name, config);
+        }
+        if let Some(signed) = &self.signed {
+            let _ = signed.remove_persistence_files(zone_name, config);
+        }
+        Ok(())
+    }
 }
 
 //----------- UpcomingLoadedInstance -------------------------------------------
@@ -601,6 +671,291 @@ pub enum ObsoleteInstance {
     Signed(ObsoleteSignedInstance),
 }
 
+impl ObsoleteInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        match self {
+            Self::Loaded(i) => i.remove_persistence_files(zone_name, config),
+            Self::Signed(i) => i.remove_persistence_files(zone_name, config),
+        }
+    }
+}
+
+impl ObsoleteInstances {
+    /// Iterate over the instances, mutably.
+    ///
+    /// Loaded instances are collated with the signed instances depending on
+    /// them.
+    pub fn iter_mut(&mut self) -> ObsoleteInstancesIterMut<'_> {
+        let (i1, i2) = self.instances.as_mut_slices();
+        ObsoleteInstancesIterMut {
+            i1: i1.iter_mut(),
+            i2: i2.iter_mut(),
+        }
+    }
+
+    /// Discard old in-memory diffs exceeding the specified limits.
+    ///
+    /// - `max_diffs`: the maximum number of diffs to store.
+    ///
+    /// - `max_diffs_size`: the maximum number of records to store across all
+    ///   diffs.
+    pub fn discard_excess_diffs(&mut self, limits: InMemoryDiffLimits) {
+        // Iterate from the newest to the oldest instances. Iterate loaded
+        // instances before the signed instances associated with them.
+        let instances = self.iter_mut().rev().flat_map(|(loaded, signed)| {
+            std::iter::once(ObsoleteInstanceMut::Loaded(loaded))
+                .chain(signed.rev().map(ObsoleteInstanceMut::Signed))
+        });
+
+        // Compute usage and skip instances that fit within limits.
+        let mut trimmer = InMemoryDiffTrimmer::new(limits);
+        let excess_instances = instances.skip_while(|instance| {
+            trimmer.account(instance.as_ref());
+            !trimmer.exceeded()
+        });
+
+        // Clear diffs from all remaining instances.
+        for mut instance in excess_instances {
+            if instance.diff().is_some() {
+                match &instance {
+                    ObsoleteInstanceMut::Loaded(instance) => {
+                        debug!("Trimming diff for loaded instance {:?}", instance.id)
+                    }
+                    ObsoleteInstanceMut::Signed(instance) => {
+                        debug!("Trimming diff for signed instance {:?}", instance.id)
+                    }
+                }
+            }
+            *instance.diff_mut() = None;
+        }
+    }
+}
+
+/// A reference to an obsolete instance.
+#[derive(Debug)]
+pub enum ObsoleteInstanceRef<'a> {
+    /// An obsolete loaded instance.
+    Loaded(&'a ObsoleteLoadedInstance),
+
+    /// An obsolete signed instance.
+    Signed(&'a ObsoleteSignedInstance),
+}
+
+impl ObsoleteInstanceRef<'_> {
+    /// The diff of these contents, if available.
+    #[must_use]
+    pub const fn diff(&self) -> &Option<Arc<DiffData>> {
+        match self {
+            Self::Loaded(i) => &i.diff,
+            Self::Signed(i) => &i.diff,
+        }
+    }
+}
+
+/// A mutable reference to an obsolete instance.
+#[derive(Debug)]
+pub enum ObsoleteInstanceMut<'a> {
+    /// An obsolete loaded instance.
+    Loaded(&'a mut ObsoleteLoadedInstance),
+
+    /// An obsolete signed instance.
+    Signed(&'a mut ObsoleteSignedInstance),
+}
+
+impl ObsoleteInstanceMut<'_> {
+    /// By reference.
+    #[must_use]
+    pub const fn as_ref(&self) -> ObsoleteInstanceRef<'_> {
+        match self {
+            Self::Loaded(i) => ObsoleteInstanceRef::Loaded(i),
+            Self::Signed(i) => ObsoleteInstanceRef::Signed(i),
+        }
+    }
+
+    /// The diff of these contents, if available.
+    #[must_use]
+    pub const fn diff(&self) -> &Option<Arc<DiffData>> {
+        match self {
+            Self::Loaded(i) => &i.diff,
+            Self::Signed(i) => &i.diff,
+        }
+    }
+
+    /// The diff of these contents, if available, by mutable reference.
+    #[must_use]
+    pub const fn diff_mut(&mut self) -> &mut Option<Arc<DiffData>> {
+        match self {
+            Self::Loaded(i) => &mut i.diff,
+            Self::Signed(i) => &mut i.diff,
+        }
+    }
+}
+
+/// A mutable iterator over obsolete instances.
+pub struct ObsoleteInstancesIterMut<'a> {
+    // Iterators over the disjoint slices in the `VecDeque`, in order.
+    // The start points to a loaded instance.
+    i1: std::slice::IterMut<'a, ObsoleteInstance>,
+    i2: std::slice::IterMut<'a, ObsoleteInstance>,
+}
+
+impl<'a> Iterator for ObsoleteInstancesIterMut<'a> {
+    type Item = (
+        &'a mut ObsoleteLoadedInstance,
+        ObsoleteSignedInstancesIterMut<'a>,
+    );
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.i1.next().or_else(|| {
+            // `i1` is empty, `i2` might not be.
+            // Swapping them doesn't break any invariants.
+            std::mem::swap(&mut self.i1, &mut self.i2);
+            self.i1.next()
+        });
+
+        // The next instance (if any) is always a loaded one.
+        let ObsoleteInstance::Loaded(loaded) = item? else {
+            unreachable!()
+        };
+
+        // Find all the succeeding signed instances.
+
+        let i1 = mem::take(&mut self.i1).into_slice();
+        if let Some(pos) = i1
+            .iter()
+            .position(|i| matches!(i, ObsoleteInstance::Loaded(_)))
+        {
+            // Split off the signed instances from `i1`.
+            let (signed, rest) = i1.split_at_mut(pos);
+            self.i1 = rest.iter_mut();
+
+            let signed = ObsoleteSignedInstancesIterMut::new(signed, &mut []);
+            return Some((loaded, signed));
+        }
+
+        let i2 = mem::take(&mut self.i2).into_slice();
+        if let Some(pos) = i2
+            .iter()
+            .position(|i| matches!(i, ObsoleteInstance::Loaded(_)))
+        {
+            // Split off the signed instances from `i2`.
+            let (signed, rest) = i2.split_at_mut(pos);
+            self.i2 = rest.iter_mut();
+
+            let signed = ObsoleteSignedInstancesIterMut::new(i1, signed);
+            return Some((loaded, signed));
+        }
+
+        // Only signed instances are left.
+        let signed = ObsoleteSignedInstancesIterMut::new(i1, i2);
+        Some((loaded, signed))
+    }
+}
+
+impl<'a> DoubleEndedIterator for ObsoleteInstancesIterMut<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        // Find the loaded instance right before the signed instances.
+
+        let i2 = mem::take(&mut self.i2).into_slice();
+        if let Some(pos) = i2
+            .iter()
+            .rposition(|i| matches!(i, ObsoleteInstance::Loaded(_)))
+        {
+            // Split off the loaded and signed instances from `i2`.
+            let (rest, [ObsoleteInstance::Loaded(loaded), signed @ ..]) = i2.split_at_mut(pos)
+            else {
+                unreachable!("`i2[pos]` exists and is `Loaded(_)`")
+            };
+            self.i2 = rest.iter_mut();
+
+            let signed = ObsoleteSignedInstancesIterMut::new(&mut [], signed);
+            return Some((loaded, signed));
+        }
+
+        let i1 = mem::take(&mut self.i1).into_slice();
+        if let Some(pos) = i1
+            .iter()
+            .rposition(|i| matches!(i, ObsoleteInstance::Loaded(_)))
+        {
+            // Split off the loaded and signed instances from `i1`.
+            let (rest, [ObsoleteInstance::Loaded(loaded), signed @ ..]) = i1.split_at_mut(pos)
+            else {
+                unreachable!("`i1[pos]` exists and is `Loaded(_)`")
+            };
+            self.i1 = rest.iter_mut();
+
+            let signed = ObsoleteSignedInstancesIterMut::new(signed, i2);
+            return Some((loaded, signed));
+        }
+
+        // No loaded instance in `i1` or `i2`.
+        assert!(i1.is_empty() && i2.is_empty());
+        None
+    }
+}
+
+/// A mutable iterator over obsolete signed instances.
+pub struct ObsoleteSignedInstancesIterMut<'a> {
+    // Iterators over the disjoint slices in the `VecDeque`, in order.
+    // Only containing signed instances that we should traverse.
+    i1: std::slice::IterMut<'a, ObsoleteInstance>,
+    i2: std::slice::IterMut<'a, ObsoleteInstance>,
+}
+
+impl<'a> ObsoleteSignedInstancesIterMut<'a> {
+    fn new(i1: &'a mut [ObsoleteInstance], i2: &'a mut [ObsoleteInstance]) -> Self {
+        Self {
+            i1: i1.iter_mut(),
+            i2: i2.iter_mut(),
+        }
+    }
+}
+
+impl<'a> Iterator for ObsoleteSignedInstancesIterMut<'a> {
+    type Item = &'a mut ObsoleteSignedInstance;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.i1.next().or_else(|| {
+            // `i1` is empty, `i2` might not be.
+            // Swapping them doesn't break any invariants.
+            std::mem::swap(&mut self.i1, &mut self.i2);
+            self.i1.next()
+        });
+
+        let ObsoleteInstance::Signed(instance) = item? else {
+            unreachable!()
+        };
+        Some(instance)
+    }
+}
+
+impl<'a> DoubleEndedIterator for ObsoleteSignedInstancesIterMut<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let item = self.i2.next_back().or_else(|| {
+            // `i2` is empty, `i1` might not be.
+            // Swapping them doesn't break any invariants.
+            std::mem::swap(&mut self.i1, &mut self.i2);
+            self.i2.next_back()
+        });
+
+        let ObsoleteInstance::Signed(instance) = item? else {
+            unreachable!()
+        };
+        Some(instance)
+    }
+}
+
+impl ExactSizeIterator for ObsoleteSignedInstancesIterMut<'_> {
+    fn len(&self) -> usize {
+        self.i1.len() + self.i2.len()
+    }
+}
+
 //----------- ObsoleteLoadedInstance -------------------------------------------
 
 /// An obsolete loaded instance.
@@ -611,9 +966,9 @@ pub struct ObsoleteLoadedInstance {
 
     /// The diff of these contents, if available.
     ///
-    /// This diff transforms zone contents _from this instance_ into those
-    /// of _the succeeding loaded instance_. It is persisted to disk (at
-    /// [`LoadedInstance::diff_path()`]) and restored when Cascade starts up.
+    /// This diff transforms zone contents _from this instance_ into those of
+    /// _the succeeding loaded instance_. It is persisted to disk and restored
+    /// when Cascade starts up.
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
@@ -655,9 +1010,9 @@ pub struct ObsoleteSignedInstance {
 
     /// The diff of these contents, if available.
     ///
-    /// This diff transforms zone contents _from this instance_ into those
-    /// of _the succeeding signed instance_. It is persisted to disk (at
-    /// [`SignedInstance::diff_path()`]) and restored when Cascade starts up.
+    /// This diff transforms zone contents _from this instance_ into those of
+    /// _the succeeding signed instance_. It is persisted to disk and restored
+    /// when Cascade starts up.
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
@@ -730,6 +1085,46 @@ impl PersistedInstance {
     }
 }
 
+//----------- LostUpcomingInstance ---------------------------------------------
+
+/// The instance of a zone that was being built the last time Cascade was
+/// running.
+///
+/// This type holds information about the [`UpcomingInstance`] from the
+/// _previous_ invocation of Cascade. It only exists if Cascade crashes or is
+/// restarted while building the instance. On startup, Cascade will clean up
+/// any leftover data from that instance (e.g. files on disk).
+#[derive(Debug, Clone)]
+pub struct LostUpcomingInstance {
+    /// The loaded instance.
+    ///
+    /// This describes the instance loaded from the zone source.
+    pub loaded: Option<LoadedInstance>,
+
+    /// The signed instance.
+    ///
+    /// This describes the signed instance generated by Cascade.
+    pub signed: Option<SignedInstance>,
+}
+
+impl LostUpcomingInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        // TODO: Propagate error information **without short-circuiting**.
+        if let Some(loaded) = &self.loaded {
+            let _ = loaded.remove_persistence_files(zone_name, config);
+        }
+        if let Some(signed) = &self.signed {
+            let _ = signed.remove_persistence_files(zone_name, config);
+        }
+        Ok(())
+    }
+}
+
 //----------- LoadedInstance ---------------------------------------------------
 
 /// A loaded instance of a zone.
@@ -773,17 +1168,78 @@ impl LoadedInstance {
         format!("{zone_name}.L{}-SOA{}", self.id.0, self.serial().get())
     }
 
-    /// The path to the persisted diff file, if any.
+    /// The path to the persisted prev-diff file, if any.
     ///
-    /// If the diff for this instance (relative to the succeeding loaded
-    /// instance) has been persisted, it will be stored at this path.
-    pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+    /// If the diff *from this instance to the succeeding one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_into_next_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
         let mut path = config
             .zone_state_dir
             .join(self.persistence_basename(zone_name))
             .into_string();
-        path.push_str(".diff");
+        path.push_str(".into-next.diff");
         path.into()
+    }
+
+    /// The path to the persisted diff file from the preceding instance.
+    ///
+    /// If the diff *from the preceding instance to this one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_from_prev_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".from-prev.diff");
+        path.into()
+    }
+
+    /// The path to the persisted snapshot at this instance, if any.
+    ///
+    /// If a snapshot for this instance has been persisted, it will be stored
+    /// at this path.
+    pub fn snapshot_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".snapshot");
+        path.into()
+    }
+
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        for path in [
+            self.diff_into_next_path(zone_name, config),
+            self.diff_from_prev_path(zone_name, config),
+            self.snapshot_path(zone_name, config),
+        ] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    debug!(%path, "Removed persistence file");
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    trace!(%path, "Persistence file does not exist");
+                }
+                Err(err) => {
+                    error!(%path, "Persistence file could not be removed: {err}");
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -867,17 +1323,78 @@ impl SignedInstance {
         )
     }
 
-    /// The path to the persisted diff file, if any.
+    /// The path to the persisted prev-diff file, if any.
     ///
-    /// If the diff for this instance (relative to the succeeding signed
-    /// instance) has been persisted, it will be stored at this path.
-    pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+    /// If the diff *from this instance to the succeeding one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_into_next_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
         let mut path = config
             .zone_state_dir
             .join(self.persistence_basename(zone_name))
             .into_string();
-        path.push_str(".diff");
+        path.push_str(".into-next.diff");
         path.into()
+    }
+
+    /// The path to the persisted diff file from the preceding instance.
+    ///
+    /// If the diff *from the preceding instance to this one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_from_prev_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".from-prev.diff");
+        path.into()
+    }
+
+    /// The path to the persisted snapshot at this instance, if any.
+    ///
+    /// If a snapshot for this instance has been persisted, it will be stored
+    /// at this path.
+    pub fn snapshot_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".snapshot");
+        path.into()
+    }
+
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        for path in [
+            self.diff_into_next_path(zone_name, config),
+            self.diff_from_prev_path(zone_name, config),
+            self.snapshot_path(zone_name, config),
+        ] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    debug!(%path, "Removed persistence file");
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    trace!(%path, "Persistence file does not exist");
+                }
+                Err(err) => {
+                    error!(%path, "Persistence file could not be removed: {err}");
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
     }
 }
 

@@ -6,17 +6,18 @@ use std::{
     sync::Arc,
 };
 
-use cascade_zonedata::{
-    DiffData, LoadedZonePersisted, LoadedZonePersister, RegularRecord, SignedZonePersisted,
-    SignedZonePersister, SoaRecord,
-};
+use cascade_zonedata::{DiffData, RegularRecord, SoaRecord};
 use domain::new::base::wire::{BuildBytes, TruncationError};
-use tracing::trace;
+use tracing::{debug, trace};
 
 use crate::{
     center::Center,
     persistence::discard_excess_diffs,
-    zone::{Zone, save_state_now},
+    zone::{
+        Zone,
+        instance::{UpcomingInstance, UpcomingLoadedInstance},
+        save_state_now,
+    },
 };
 
 /// Persist the data for a loaded instance of a zone.
@@ -28,12 +29,11 @@ use crate::{
     skip_all,
     fields(zone = %zone.name),
 )]
-pub fn persist_loaded(
-    zone: &Arc<Zone>,
-    center: &Arc<Center>,
-    persister: LoadedZonePersister,
-) -> LoadedZonePersisted {
-    let loaded_diff = persister.loaded_diff();
+pub fn persist_loaded(zone: &Arc<Zone>, center: &Arc<Center>, upcoming: &UpcomingLoadedInstance) {
+    debug!("Persisting the loaded instance");
+
+    // TODO: Remove old-style diffs.
+    let loaded_diff = &upcoming.diff;
     if !loaded_diff.is_empty() {
         let destination = {
             let mut handle = zone.write_handle(center);
@@ -70,7 +70,7 @@ pub fn persist_loaded(
         // the Option is Some the referred to path can just be deleted.
         save_state_now(center, zone);
 
-        persist_to_file(&destination, loaded_diff.clone());
+        persist_to_file(&destination, loaded_diff);
 
         // We don't add the loaded diff to the in-memory store used for
         // serving IXFR responses, that is done later in persist_signed() as
@@ -79,7 +79,21 @@ pub fn persist_loaded(
         // reason we would then have to remove the loaded diff that we added.
     }
 
-    persister.mark_complete()
+    if upcoming.diff.removed_soa.is_some() {
+        // Store a diff from the current to the upcoming instance.
+        let path = upcoming.diff_from_prev_path(&zone.name, &center.config);
+        persist_to_file(path.as_std_path(), &upcoming.diff);
+    } else {
+        // There is no previous instance, so a diff is unhelpful; store a
+        // snapshot instead.
+
+        let path = upcoming.snapshot_path(&zone.name, &center.config);
+        // TODO: Use a snapshot-specific persistence function.
+        assert!(upcoming.diff.removed_records.is_empty());
+        persist_to_file(path.as_std_path(), &upcoming.diff);
+    }
+
+    debug!("Persisting the loaded instance completed");
 }
 
 /// Persist the data for a signed instance of a zone.
@@ -91,15 +105,13 @@ pub fn persist_loaded(
     skip_all,
     fields(zone = %zone.name),
 )]
-pub fn persist_signed(
-    zone: &Arc<Zone>,
-    center: &Arc<Center>,
-    persister: SignedZonePersister,
-) -> SignedZonePersisted {
-    if !persister.signed_diff().is_empty() {
-        let loaded_diff = persister.loaded_diff();
-        let signed_diff = persister.signed_diff();
+pub fn persist_signed(zone: &Arc<Zone>, center: &Arc<Center>, upcoming: &UpcomingInstance) {
+    debug!("Persisting the signed instance");
 
+    // TODO: Remove old-style diffs.
+    let loaded_diff = upcoming.loaded.as_ref().map(|i| &i.diff);
+    let signed_diff = &upcoming.signed.as_ref().unwrap().diff;
+    if !signed_diff.is_empty() {
         let destination = {
             let mut handle = zone.write_handle(center);
             let loaded_serial =
@@ -139,18 +151,33 @@ pub fn persist_signed(
 
         // Write the diff to disk as a binary AXFR snapshot or binary IXFR
         // diff.
-        persist_to_file(&destination, signed_diff.clone());
+        persist_to_file(&destination, signed_diff);
 
         // Store the diffs in-memory for serving IXFR out.
         store_for_ixfr_out(center, zone, loaded_diff, signed_diff);
     }
 
-    persister.mark_complete()
+    let upcoming = upcoming.signed.as_ref().unwrap();
+    if upcoming.diff.removed_soa.is_some() {
+        // Store a diff from the current to the upcoming instance.
+        let path = upcoming.diff_from_prev_path(&zone.name, &center.config);
+        persist_to_file(path.as_std_path(), &upcoming.diff);
+    } else {
+        // There is no previous instance, so a diff is unhelpful; store a
+        // snapshot instead.
+
+        let path = upcoming.snapshot_path(&zone.name, &center.config);
+        // TODO: Use a snapshot-specific persistence function.
+        assert!(upcoming.diff.removed_records.is_empty());
+        persist_to_file(path.as_std_path(), &upcoming.diff);
+    }
+
+    debug!("Persisting the signed instance completed");
 }
 
 //------------ persist_to_file() ----------------------------------------------
 
-pub fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
+pub fn persist_to_file(destination: &Path, diff: &DiffData) {
     persist_to_file_from_parts(
         destination,
         diff.removed_soa.clone(),

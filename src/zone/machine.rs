@@ -188,7 +188,9 @@ impl<'a> ZoneHandle<'a> {
         self.storage().abandon_load(builder);
 
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
     }
 
     pub(crate) fn loading_failed(&mut self, builder: LoadedZoneBuilder, err: RefreshError) {
@@ -203,7 +205,9 @@ impl<'a> ZoneHandle<'a> {
         self.storage().abandon_load(builder);
 
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
 
         self.state.record_event(
             HistoricalEvent::LoadingFailed {
@@ -258,6 +262,11 @@ impl<'a> ZoneHandle<'a> {
         };
         transition.move_to(ZoneStateMachine::PersistingLoaded(loaded.approve()));
 
+        // Persist the zone state file at the new path so that information about
+        // the upcoming instance is available in case Cascade crashes while
+        // persisting the zone contents.
+        let _ = self.save_state_now();
+
         // We move to the signing state and start persisting. The actual signing
         // will be triggered by the zone storage when persisting is done.
         let persister = self.storage().accept_loaded();
@@ -281,7 +290,9 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::Waiting(loaded.soft_reject()));
         let loaded_reviewer = self.storage().abandon_loaded_review();
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -351,7 +362,9 @@ impl<'a> ZoneHandle<'a> {
 
         let loaded_reviewer = self.storage().abandon_sign(builder);
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -370,7 +383,9 @@ impl<'a> ZoneHandle<'a> {
 
         let loaded_reviewer = self.storage().abandon_sign(builder);
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -424,7 +439,9 @@ impl<'a> ZoneHandle<'a> {
         let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
 
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
 
         self.storage()
             .start_rewinding_review(loaded_reviewer, signed_reviewer);
@@ -447,7 +464,9 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::HaltSigned(review.hard_reject()));
 
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
     }
 }
 
@@ -465,7 +484,16 @@ impl<'a> ZoneHandle<'a> {
 
         let viewer = self.storage().finish_signed_persistence(persisted);
 
-        self.state.instances.switch();
+        // If there was no current instance, a snapshot was persisted.
+        let new_snapshot = self.state.instances.current.is_none();
+
+        let policy = self.state.policy.as_ref().unwrap();
+        self.state.instances.switch(policy);
+
+        if new_snapshot {
+            self.state.persistence.snapshot_id =
+                Some(self.state.instances.current.as_ref().unwrap().signed.id);
+        }
 
         let serial = self
             .state
@@ -500,7 +528,9 @@ impl<'a> ZoneHandle<'a> {
                 let waiting = halt_loaded.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
                 let loaded_reviewer = self.storage().abandon_loaded_review();
-                self.state.instances.abandon();
+                self.state
+                    .instances
+                    .abandon(&self.zone.name, &self.center.config);
                 self.storage()
                     .start_rewinding_loaded_review(loaded_reviewer);
             }
@@ -509,7 +539,9 @@ impl<'a> ZoneHandle<'a> {
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
 
                 self.signer().before_signed_abandonment();
-                self.state.instances.abandon();
+                self.state
+                    .instances
+                    .abandon(&self.zone.name, &self.center.config);
 
                 let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
                 self.storage()
@@ -519,7 +551,9 @@ impl<'a> ZoneHandle<'a> {
                 let waiting = signing_failed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
 
-                self.state.instances.abandon();
+                self.state
+                    .instances
+                    .abandon(&self.zone.name, &self.center.config);
 
                 // The signing operation has already been abandoned, so the zone
                 // data storage is already passive. Its call to `on_passive()`
@@ -550,6 +584,11 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::PersistingLoaded(
             halt.override_rejection(),
         ));
+
+        // Persist the zone state file so that information about the upcoming
+        // instance is available in case Cascade crashes while persisting the
+        // zone contents.
+        let _ = self.save_state_now();
 
         // We move to the signing state and start persisting. The actual signing
         // will be triggered by the zone storage when persisting is done.
