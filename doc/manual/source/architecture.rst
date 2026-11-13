@@ -47,6 +47,14 @@ A zone version moves through the following stages:
    An unsigned zone passes through optional review stages before and after
    signing. Only an approved signed version becomes the published version.
 
+Cascade initially signs the entire zone. It then uses :doc:`incremental
+signing <incremental-signing>` to reuse valid signatures and limit the size of
+IXFR responses. A signing operation may be triggered by a new input zone, a
+key-management change, or a scheduled signature refresh. By default, refreshes
+occur every 12 hours even if the unsigned zone has not changed. These scheduled
+operations normally replace only some signatures, rather than signing the
+entire zone again.
+   
 Flexible Signing
 ----------------
 
