@@ -54,7 +54,29 @@ key-management change, or a scheduled signature refresh. By default, refreshes
 occur every 12 hours even if the unsigned zone has not changed. These scheduled
 operations normally replace only some signatures, rather than signing the
 entire zone again.
-   
+
+Review and Failure Isolation
+----------------------------
+
+The unsigned and signed review stages are independent. Each can be disabled,
+require approval through the :program:`cascade` CLI, or invoke a custom script.
+During a review, Cascade serves the candidate zone from a dedicated review
+endpoint so external tools can retrieve it by AXFR or IXFR. See
+:doc:`review-hooks` for configuration and examples.
+
+A review policy also determines what rejection means:
+
+- **Discard** abandons the candidate zone; a later input version can
+  still be processed.
+- **Halt** keeps the zone stopped at the failed review so an operator can
+  investigate, override the result, or reset the candidate.
+
+A signing failure also halts that zone until an operator resets it. These
+states apply per zone: a rejected or failed candidate does not replace
+the currently published version and does not stop other zones from being
+processed. Operators can also use :doc:`maintenance mode <maintenance-mode>`
+to prevent a particular zone from starting new work.
+
 Flexible Signing
 ----------------
 
@@ -73,31 +95,6 @@ of our Cascade packages.
    running  untrusted third-party code inside the main Cascade process. This
    eliminates a source of potential instability and unpredictable behaviour,
    as well as limiting resource usage.
-
-Bespoke Zone Verification
--------------------------
-
-Using :doc:`review-hooks`, Cascade supports optional verification of your
-zone data at two critical stages: verification of the unsigned zone, and
-verification of the signed zone. In both cases verification consists of
-executing an operator supplied script or application which can verify the
-zone using whatever mechanisms are required to satisfy your policy.
-
-Verification of the zone can be done by retrieving it using the :term:`zone
-transfer <Zone transfer>` protocol from dedicated "review" nameservers within
-Cascade, either verifying the zone directly or writing the zone to disk for
-verification by tools that only support working with files.
-
-On completion of the verification process, approval or rejection is signalled
-back to Cascade via the script exit code.
-
-Rejecting a zone "soft" halts the Cascade pipeline for the zone, preventing it
-from cascading further down the pipeline, but allowing a newer version of the
-zone to be completely processed (unless that too should fail verification).
-
-Serious errors in the pipeline may result in a "hard" halt for the pipeline
-of a zone, preventing any further processing of that zone for the current and
-future versions until an operator manually resumes the pipeline.
 
 Managing State
 --------------
