@@ -13,10 +13,9 @@ use tracing::{debug, info, trace, trace_span, warn};
 use crate::{
     center::Center,
     persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
-    server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{SignedInstanceId, Zone, ZoneHandle, ZoneState},
-    zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
+    zonedata::{LoadedZonePersister, SignedZonePersister, ZoneRestorer},
 };
 
 //----------- ZonePersistenceHandle --------------------------------------------
@@ -43,39 +42,7 @@ impl ZonePersistenceHandle<'_> {
         }
     }
 
-    fn abandon_loaded_restoration(&mut self, restorer: LoadedZoneRestorer) {
-        self.reset_state_due_to_abandoned_restore();
-        let (loaded_reviewer, signed_reviewer, viewer) =
-            self.zone().storage().abandon_loaded_restoration(restorer);
-
-        // Update the zone servers.
-        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
-
-        // Send a notification that the state machine is now passive.
-        self.zone().storage().on_passive();
-
-        self.state.persistence.ongoing.finish();
-    }
-
-    fn abandon_signed_restoration(&mut self, restorer: SignedZoneRestorer) {
-        self.reset_state_due_to_abandoned_restore();
-        let (loaded_reviewer, signed_reviewer, viewer) =
-            self.zone().storage().abandon_signed_restoration(restorer);
-
-        // Update the zone servers.
-        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
-
-        // Send a notification that the state machine is now passive.
-        self.zone().storage().on_passive();
-
-        self.state.persistence.ongoing.finish();
-    }
-
-    fn reset_state_due_to_abandoned_restore(&mut self) {
+    pub(super) fn reset_state_due_to_abandoned_restore(&mut self) {
         self.clear();
 
         // Remove any already enqueued signing operation that is blocked by
@@ -147,7 +114,7 @@ impl ZonePersistenceHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn start_restore(&mut self, restorer: LoadedZoneRestorer) {
+    pub fn start_restore(&mut self, restorer: ZoneRestorer) {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("restore");
@@ -155,82 +122,7 @@ impl ZonePersistenceHandle<'_> {
             .persistence
             .ongoing
             .spawn_blocking(span, move || {
-                debug!("Attempting to restore persisted zone data");
-
-                // Try to restore the loaded instance.
-                let mut restorer = restorer;
-                let result = super::restore_loaded(&zone, &center, &mut restorer);
-                let mut handle = zone.write_handle(&center);
-                let restored = match result {
-                    Ok(true) => {
-                        // Data was restored. Use it.
-                        restorer.finish().unwrap_or_else(|_| {
-                            unreachable!("Loaded zone restoration should have built new zone data")
-                        })
-                    }
-                    Ok(false) => {
-                        // There was nothing to restore.
-                        handle.persistence().abandon_loaded_restoration(restorer);
-                        return;
-                    }
-                    Err(err) => {
-                        warn!("Abandoning loaded restoration: {err}");
-                        handle.persistence().abandon_loaded_restoration(restorer);
-                        return;
-                    }
-                };
-
-                // Obtain the signed zone restorer.
-                let mut restorer = handle.storage().finish_loaded_restoration(restored);
-
-                std::mem::drop(handle);
-
-                // Try to restore the signed instance.
-                let result = super::restore_signed(&zone, &center, &mut restorer);
-                let mut handle = zone.write_handle(&center);
-                let restored = match result {
-                    Ok(true) => {
-                        // Data was restored. Use it.
-                        restorer.finish().unwrap_or_else(|_| {
-                            unreachable!("Signed zone restoration should have built new zone data")
-                        })
-                    }
-                    Ok(false) => {
-                        // There was nothing to restore.
-                        handle.persistence().abandon_signed_restoration(restorer);
-                        return;
-                    }
-                    Err(err) => {
-                        warn!("Abandoning signed restoration: {err}");
-                        handle.persistence().abandon_signed_restoration(restorer);
-                        return;
-                    }
-                };
-
-                trace!(
-                    "Restored diffs: {:?}",
-                    handle.state.persistence.loaded_diffs
-                );
-                let (loaded_reviewer, signed_reviewer, viewer) =
-                    handle.storage().finish_signed_restoration(restored);
-
-                // The call to instances.restore() below will update current
-                // instance metadata to match restored persisted instance
-                // metadata so we don't handle that here.
-
-                handle.signer().on_restoration();
-
-                // Register the zone against the zone servers.
-                LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
-                SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
-                PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
-
-                // Mark restoration as complete.
-                handle.state.instances.restore();
-
-                // Send a notification that the state machine is now passive.
-                handle.storage().on_passive();
-
+                let mut handle = super::restore(&zone, &center, restorer);
                 handle.state.persistence.ongoing.finish();
             });
     }

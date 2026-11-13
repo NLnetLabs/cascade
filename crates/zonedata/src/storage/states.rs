@@ -9,14 +9,14 @@ use super::ZoneDataStorage;
 
 #[cfg(doc)]
 use crate::{
-    LoadedZoneBuilder, LoadedZonePersister, LoadedZoneRestorer, LoadedZoneReviewer,
-    SignedZoneBuilder, SignedZoneCleaner, SignedZonePersister, SignedZoneRestorer,
-    SignedZoneReviewer, ZoneCleaner, ZoneViewer,
+    LoadedZoneBuilder, LoadedZonePersister, LoadedZoneReviewer, SignedZoneBuilder,
+    SignedZoneCleaner, SignedZonePersister, SignedZoneReviewer, ZoneCleaner, ZoneRestorer,
+    ZoneViewer,
 };
 
-//----------- RestoringLoadedStorage -------------------------------------------
+//----------- RestoringStorage -------------------------------------------------
 
-/// The [`ZoneDataStorage::RestoringLoaded`] state.
+/// The [`ZoneDataStorage::Restoring`] state.
 ///
 /// This is the initial state, in which a persisted loaded instance of the zone
 /// can be restored.
@@ -25,39 +25,14 @@ use crate::{
 ///
 /// There are no current loaded or signed instances of the zone.
 ///
-/// There is an upcoming loaded instance of the zone.
+/// There are upcoming loaded and signed instances of the zone.
 ///
 /// ## Access
 ///
-/// The [`LoadedZoneRestorer`] points to the upcoming instance.
-pub struct RestoringLoadedStorage {
+/// The [`ZoneRestorer`] points to the upcoming instance.
+pub struct RestoringStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
-}
-
-//----------- RestoringSignedStorage -------------------------------------------
-
-/// The [`ZoneDataStorage::RestoringSigned`] state.
-///
-/// This state follows [`RestoringLoadedStorage`]; in it, a persisted signed
-/// instance of the zone can be restored.
-///
-/// ## Data
-///
-/// There is a current loaded instance of the zone. There is no current signed
-/// instance of the zone.
-///
-/// There is an upcoming signed instance of the zone.
-///
-/// ## Access
-///
-/// The [`SignedZoneRestorer`] points to the upcoming instance.
-pub struct RestoringSignedStorage {
-    /// The underlying data.
-    pub(super) data: Arc<Data>,
-
-    /// The index of the current loaded instance.
-    pub(super) curr_loaded_index: bool,
 }
 
 //----------- PassiveStorage ---------------------------------------------------
