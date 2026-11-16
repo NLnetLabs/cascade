@@ -479,7 +479,8 @@ impl<'a> ZoneHandle<'a> {
 
         let viewer = self.storage().finish_signed_persistence(persisted);
 
-        self.state.instances.switch();
+        let policy = self.state.policy.as_ref().unwrap();
+        self.state.instances.switch(policy);
 
         let serial = self
             .state

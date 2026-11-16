@@ -49,6 +49,12 @@ use domain::{
     },
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use tracing::debug;
+
+use crate::{
+    policy::PolicyVersion,
+    zone::{InMemoryDiffLimits, InMemoryDiffTrimmer},
+};
 
 //----------- Instances --------------------------------------------------------
 
@@ -274,7 +280,7 @@ impl Instances {
     /// - There is no upcoming instance.
     /// - The upcoming instance is malformed.
     /// - A re-sign took place but there is no current loaded instance.
-    pub fn switch(&mut self) {
+    pub fn switch(&mut self, policy: &PolicyVersion) {
         let pub_time = SystemTime::now();
 
         let upcoming = self
@@ -366,6 +372,9 @@ impl Instances {
                 panic!("The upcoming instance is malformed")
             }
         }
+
+        // New obsolete diffs were added; discard excess ones.
+        self.discard_excess_diffs(policy);
     }
 
     /// Abandon the upcoming instance entirely.
@@ -438,6 +447,34 @@ impl Instances {
 }
 
 impl Instances {
+    /// Discard old in-memory diffs exceeding policy limits.
+    pub fn discard_excess_diffs(&mut self, policy: &PolicyVersion) {
+        // Look up information about the current signed instance (or the
+        // persisted one, if it has not been restored yet), as a basis for
+        // policy limits.
+        let latest = if let Some(current) = &self.current {
+            &current.signed
+        } else if let Some(persisted) = &self.persisted {
+            &persisted.signed
+        } else {
+            // We don't have enough information.
+            return;
+        };
+
+        let limits = InMemoryDiffLimits::compute(policy, latest);
+        self.obsolete.discard_excess_diffs(limits);
+    }
+}
+
+impl Instances {
+    /// React to a change in policy.
+    pub fn after_policy_change(&mut self, new: &PolicyVersion) {
+        // The policy for in-memory diffs might have changed.
+        // NOTE: We could check whether the relevant bits of policy have
+        // changed, but it's not that important.
+        self.discard_excess_diffs(new);
+    }
+
     /// Check invariants.
     pub fn check_invariants(&self) {
         let Self {
@@ -734,6 +771,36 @@ impl ObsoleteInstances {
             .back()
             .map(|i| i.id.0)
             .or(self.per_load.back().map(|is| is.loaded.id))
+    }
+
+    /// Discard old in-memory diffs exceeding the specified limits.
+    pub fn discard_excess_diffs(&mut self, limits: InMemoryDiffLimits) {
+        // Iterate from the newest to the oldest instances. Iterate loaded
+        // instances before the signed instances associated with them.
+        let mut trimmer = InMemoryDiffTrimmer::new(limits);
+        for i in self.latest_signed.iter_mut().rev() {
+            trimmer.account_signed(i);
+            if trimmer.exceeded() {
+                debug!(id = ?i.id, "Trimming diff for signed instance");
+                i.diff_into_next = None;
+            }
+        }
+        for is in self.per_load.iter_mut().rev() {
+            let i = &mut is.loaded;
+            trimmer.account_loaded(i);
+            if trimmer.exceeded() {
+                debug!(id = ?i.id, "Trimming diff for loaded instance");
+                i.diff_into_next = None;
+            }
+
+            for i in is.signed.iter_mut().rev() {
+                trimmer.account_signed(i);
+                if trimmer.exceeded() {
+                    debug!(id = ?i.id, "Trimming diff for signed instance");
+                    i.diff_into_next = None;
+                }
+            }
+        }
     }
 
     /// Check invariants.

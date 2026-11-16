@@ -342,6 +342,11 @@ pub fn restore_signed(
             // Store the signed diff to be used as part of serving an IXFR.
             state.storage.diffs.store_signed_diff(loaded_serial, diff);
         }
+
+        let state = &mut *state;
+        if let Some(policy) = &state.policy {
+            state.instances.discard_excess_diffs(policy);
+        }
     }
 
     discard_excess_diffs(center, zone);
