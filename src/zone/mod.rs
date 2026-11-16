@@ -247,6 +247,7 @@ impl ZoneHandle<'_> {
     pub fn set_policy(&mut self, new: Arc<PolicyVersion>) {
         let _old = self.state.policy.replace(new.clone());
         self.signer().after_policy_change();
+        self.state.instances.after_policy_change(&new);
     }
 
     /// Persist the state of the zone immediately.
@@ -904,6 +905,19 @@ impl InMemoryDiffLimits {
             max_num_diffs: Some(policy.server.outbound.max_diffs as u64),
             max_num_records: Some(max_diffs_size),
         }
+    }
+
+    /// Whether these limits are weaker than others.
+    ///
+    /// Returns `true` iff `self` is guaranteed to retain more diffs than
+    /// `other`.
+    #[must_use]
+    pub fn is_weaker_than(&self, other: &Self) -> bool {
+        self.max_num_diffs
+            .is_none_or(|n| other.max_num_diffs.is_some_and(|m| n >= m))
+            && self
+                .max_num_records
+                .is_none_or(|n| other.max_num_records.is_some_and(|m| n >= m))
     }
 }
 
