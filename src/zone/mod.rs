@@ -258,6 +258,7 @@ impl ZoneHandle<'_> {
         }
 
         let spec = state::Spec::build(self.state);
+        tracing::trace!(zone = %self.zone.name, ?spec, "Saving zone state");
         let result = spec.save(&path);
 
         match &result {
