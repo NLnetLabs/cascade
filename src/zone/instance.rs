@@ -177,7 +177,7 @@ impl Instances {
                 soa,
                 num_records,
             },
-            diff: built.diff().clone(),
+            diff_from_prev: built.diff().clone(),
         });
     }
 }
@@ -256,7 +256,7 @@ impl Instances {
                 num_loaded_records,
                 min_expiration,
             },
-            diff: built.diff().clone(),
+            diff_from_prev: built.diff().clone(),
         });
     }
 }
@@ -298,7 +298,7 @@ impl Instances {
 
                 let UpcomingSignedInstance {
                     inner: signed,
-                    diff: signed_diff,
+                    diff_from_prev: signed_diff,
                 } = signed;
 
                 self.current = Some(CurrentInstance {
@@ -322,11 +322,11 @@ impl Instances {
             } => {
                 let UpcomingLoadedInstance {
                     inner: loaded,
-                    diff: loaded_diff,
+                    diff_from_prev: loaded_diff,
                 } = loaded;
                 let UpcomingSignedInstance {
                     inner: signed,
-                    diff: signed_diff,
+                    diff_from_prev: signed_diff,
                 } = signed;
 
                 let old = self.current.replace(CurrentInstance {
@@ -458,7 +458,7 @@ pub struct UpcomingLoadedInstance {
     /// This diff transforms zone contents _from the current instance_ into
     /// those of _this upcoming instance_. If this instance is accepted, the
     /// diff will be saved as part of the obsoleted instance.
-    pub diff: Arc<DiffData>,
+    pub diff_from_prev: Arc<DiffData>,
 }
 
 impl Deref for UpcomingLoadedInstance {
@@ -477,11 +477,14 @@ impl DerefMut for UpcomingLoadedInstance {
 
 impl fmt::Debug for UpcomingLoadedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { inner, diff: _ } = self;
+        let Self {
+            inner,
+            diff_from_prev: _,
+        } = self;
         f.debug_struct("UpcomingLoadedInstance")
             .field("inner", inner)
             // Hide the diff.
-            .field("diff", &format_args!("..."))
+            .field("diff_from_prev", &format_args!("..."))
             .finish()
     }
 }
@@ -499,7 +502,7 @@ pub struct UpcomingSignedInstance {
     /// This diff transforms zone contents _from the current instance_ into
     /// those of _this upcoming instance_. If this instance is accepted, the
     /// diff will be saved as part of the obsoleted instance.
-    pub diff: Arc<DiffData>,
+    pub diff_from_prev: Arc<DiffData>,
 }
 
 impl Deref for UpcomingSignedInstance {
@@ -518,11 +521,14 @@ impl DerefMut for UpcomingSignedInstance {
 
 impl fmt::Debug for UpcomingSignedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { inner, diff: _ } = self;
+        let Self {
+            inner,
+            diff_from_prev: _,
+        } = self;
         f.debug_struct("UpcomingSignedInstance")
             .field("inner", inner)
             // Hide the diff.
-            .field("diff", &format_args!("..."))
+            .field("diff_from_prev", &format_args!("..."))
             .finish()
     }
 }
