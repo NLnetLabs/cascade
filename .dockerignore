@@ -1,0 +1,7 @@
+*
+!/src
+!/crates
+!/etc
+!Cargo.toml
+!Cargo.lock
+!build.rs

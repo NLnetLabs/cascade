@@ -31,7 +31,7 @@ runs:
     # do so now.
     - name: Force NSD to send a NOTIFY to Cascade for example.test
       run: |
-        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary notify example.test
+        ./scripts/manage-test-environment.sh control nsd-primary notify example.test
 
     - name: Check that Cascade didn't crash
       run: |

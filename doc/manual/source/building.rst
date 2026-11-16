@@ -99,8 +99,8 @@ as simple as running:
 
 .. code-block:: bash
 
-  cargo install --locked --git https://github.com/nlnetlabs/cascade cascade cascaded
-  cargo install --locked --bin dnst --git https://github.com/nlnetlabs/dnst dnst
+  cargo install --locked --git https://github.com/nlnetlabs/cascade cascade cascaded --tag v0.1.0-beta8
+  cargo install --locked --bin dnst --git https://github.com/nlnetlabs/dnst dnst --tag v0.3.0-alpha
 
 The command will build Cascade and install it in the same directory that
 Cargo itself lives in, likely ``$HOME/.cargo/bin``. Ensure this directory is
@@ -116,7 +116,7 @@ If you want to use a PKCS#11 compatible :doc:`Hardware Security Module (HSM)
 
 .. code-block:: bash
 
-  cargo install --locked --git https://github.com/nlnetlabs/cascade-hsm-bridge
+  cargo install --locked --git https://github.com/nlnetlabs/cascade-hsm-bridge --tag v0.2.0-beta2
 
 Finally, before running Cascade you will need to create a few directories and
 Cascade's config file. Create the directory where you want to store the config

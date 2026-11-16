@@ -32,7 +32,7 @@ semver = toml.load('../../../Cargo.toml')
 # The short X.Y version
 version = semver.get('workspace').get('package').get('version')
 
-rustversion = semver.get('package').get('rust-version')
+rustversion = semver.get('workspace').get('package').get('rust-version')
 rst_epilog = f"""
 .. |rustversion| replace:: {rustversion}
 """

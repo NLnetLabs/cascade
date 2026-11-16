@@ -55,8 +55,8 @@ runs:
           policy="${first_policy}-${ZONEMD}"
         fi
 
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/incremental-signing"
         cp "${TEST_DIR}/policies/${policy}.toml" "${POLICY_DIR}/test.toml"
         cascade policy reload
 
@@ -68,7 +68,7 @@ runs:
         KEY: "${{ inputs.key }}"
         POLICY: "${{ steps.add-policy.outputs.POLICY }}"
       run: |
-        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        TEST_DIR="${PWD}/incremental-signing"
         ZONE_FILE="${TEST_DIR}/zones/incremental-signing-test${TEST_IDX}-input1.zone"
         KEY_FILE="${TEST_DIR}/keys/${KEY}"
         cp "${ZONE_FILE}" example.in
@@ -99,8 +99,8 @@ runs:
           policy="${second_policy}-${ZONEMD}"
         fi
 
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/incremental-signing"
         cp "${TEST_DIR}/policies/${policy}.toml" "${POLICY_DIR}/test.toml"
         cascade policy reload
 
@@ -110,7 +110,7 @@ runs:
       env:
         TEST_IDX: "${{ inputs.test_idx }}"
       run: |
-        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        TEST_DIR="${PWD}/incremental-signing"
         ZONE_FILE="${TEST_DIR}/zones/incremental-signing-test${TEST_IDX}-input2.zone"
         cp "${ZONE_FILE}" example.in
         cascade zone reload example
@@ -133,7 +133,7 @@ runs:
         TEST_IDX: "${{ inputs.test_idx }}"
       run: |
         second_policy=${POLICY##*/}
-        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        TEST_DIR="${PWD}/incremental-signing"
         cp "${TEST_DIR}/reference-output/incremental-signing-test${TEST_IDX}-input2.zone.${second_policy}.signed.sorted" reference.output.sorted
         dig @127.0.0.1 -p 4542 example AXFR | egrep -v '^;|^$' | sort -u > output.sorted
         diff -w -u output.sorted reference.output.sorted

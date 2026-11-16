@@ -10,7 +10,7 @@
 //! See the [`crate::builder`] module for high-level types that do consider
 //! concurrent access.
 
-use std::{fmt, sync::Arc};
+use std::fmt;
 
 use domain::{
     new::base::{
@@ -277,7 +277,7 @@ pub struct SignedZoneReplacer<'d> {
     next_loaded: Option<&'d InstanceData>,
 
     /// The diff between the loaded instances, if any.
-    loaded_diff: Option<&'d Arc<DiffData>>,
+    loaded_diff: Option<&'d DiffData>,
 
     /// The current signed instance, if any.
     curr: &'d InstanceData,
@@ -300,7 +300,7 @@ impl<'d> SignedZoneReplacer<'d> {
     pub(crate) const fn new(
         curr_loaded: &'d InstanceData,
         next_loaded: Option<&'d InstanceData>,
-        loaded_diff: Option<&'d Arc<DiffData>>,
+        loaded_diff: Option<&'d DiffData>,
         curr: &'d InstanceData,
         next: &'d mut InstanceData,
         diff: &'d mut Option<Box<DiffData>>,
@@ -344,7 +344,7 @@ impl<'d> SignedZoneReplacer<'d> {
     ///
     /// If [`Self::next_loaded()`] returns [`Some`], this method returns the
     /// difference from [`Self::curr_loaded()`] to it.
-    pub const fn loaded_diff(&self) -> Option<&'d Arc<DiffData>> {
+    pub const fn loaded_diff(&self) -> Option<&'d DiffData> {
         self.loaded_diff
     }
 
@@ -424,7 +424,7 @@ pub struct SignedZonePatcher<'d> {
     next_loaded: Option<&'d InstanceData>,
 
     /// The diff between the loaded instances, if any.
-    loaded_diff: Option<&'d Arc<DiffData>>,
+    loaded_diff: Option<&'d DiffData>,
 
     /// The authoritative instance.
     curr: &'d InstanceData,
@@ -454,7 +454,7 @@ impl<'d> SignedZonePatcher<'d> {
     pub(crate) fn new(
         curr_loaded: &'d InstanceData,
         next_loaded: Option<&'d InstanceData>,
-        loaded_diff: Option<&'d Arc<DiffData>>,
+        loaded_diff: Option<&'d DiffData>,
         curr: &'d InstanceData,
         next: &'d mut InstanceData,
         diff: &'d mut Option<Box<DiffData>>,
@@ -501,7 +501,7 @@ impl<'d> SignedZonePatcher<'d> {
     ///
     /// If [`Self::next_loaded()`] returns [`Some`], this method returns the
     /// difference from [`Self::curr_loaded()`] to it.
-    pub const fn loaded_diff(&self) -> Option<&'d Arc<DiffData>> {
+    pub const fn loaded_diff(&self) -> Option<&'d DiffData> {
         self.loaded_diff
     }
 

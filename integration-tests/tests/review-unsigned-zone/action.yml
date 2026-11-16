@@ -28,8 +28,8 @@ runs:
 
     - name: Add a policy
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-unsigned-zone"
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
+        INTEGRATION_TEST_DIR="${PWD}/review-unsigned-zone"
         # Copy the new test policy into the Cascade policy directory.
         cp ${INTEGRATION_TEST_DIR}/policies/test.toml ${POLICY_DIR}/
         # Fix the path to the review hook specified in the new test policy.

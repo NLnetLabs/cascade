@@ -49,6 +49,9 @@
 - create a GH milestone for the next release (if needed)
 
 # Final steps
+- Update the "Building from Source" page in the documentation to ensure the right
+  combination of cascade, dnst and cascade-hsm-bridge tags are listed in the
+  installation instructions
 - Upgrade cascade.nlnetlabs.nl to the now published released package.
   - This shouldn't involve any actual changes as it should be the same package as was
     already upgraded using a workflow output artifact above, but does check that the

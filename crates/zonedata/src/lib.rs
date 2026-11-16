@@ -185,9 +185,7 @@ pub use persister::{
 };
 
 mod restorer;
-pub use restorer::{
-    LoadedZoneRestored, LoadedZoneRestorer, SignedZoneRestored, SignedZoneRestorer,
-};
+pub use restorer::{ZoneRestored, ZoneRestorer};
 
 mod data;
 use data::{Data, InstanceData};

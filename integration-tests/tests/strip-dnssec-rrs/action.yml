@@ -28,7 +28,7 @@ runs:
 
     - name: Load a zone that contains DNSSEC RRs.
       run: |
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/strip-dnssec-rrs"
+        INTEGRATION_TEST_DIR="${PWD}/strip-dnssec-rrs"
         ZONE_FILE="${INTEGRATION_TEST_DIR}/example.test"
         cascade zone add --policy default --source "${ZONE_FILE}" example.test
 

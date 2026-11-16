@@ -71,30 +71,25 @@ RUN <<EOF
   softhsm2-util --init-token --label Cascade --pin 1234 --so-pin 1234 --free
 EOF
 
-# Copy source files into container in case we need to build from source
-COPY etc/ /cascade/etc/
-COPY Cargo.toml Cargo.lock build.rs /cascade/
-COPY src/ /cascade/src/
-COPY crates/ /cascade/crates/
-
-# Copy built the cascade binaries into the container
-# Make sure this stays at the end of the Dockerfile to make best use of image step caching
-COPY target/release/cascaded target/release/cascade /root/cargo-release/bin/
-COPY target/debug/cascaded target/debug/cascade /root/cargo-debug/bin/
-
 ARG REBUILD_INSIDE=false
+ARG BUILD_PROFILE=debug
+
+# Copy source files into container in case we need to build from source
+# See `.dockerignore` for includes/excludes
+COPY . /cascade/
 
 RUN <<EOF
   if [[ "$REBUILD_INSIDE" == true ]]; then
     cd /cascade/
 
     # Build Cascade
-    cargo build
-    cargo build --release
+    case "$BUILD_PROFILE" in
+      debug) cargo build ;;
+      release) cargo build --release ;;
+    esac
 
     # Save built binaries
-    cp -v -t /root/cargo-release/bin/ target/release/{cascade,cascaded}
-    cp -v -t /root/cargo-debug/bin/ target/debug/{cascade,cascaded}
+    cp -v -t /root/cargo-$BUILD_PROFILE/bin/ target/$BUILD_PROFILE/{cascade,cascaded}
 
     # Delete the repository to reduce the size of the image (and act will copy
     # the repository into the container anyway)

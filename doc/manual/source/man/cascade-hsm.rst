@@ -125,21 +125,13 @@ Client Certificate Authentication:
           Optional path to a TLS certificate to authenticate to the KMIP server
           with. The file will be read and sent to the server.
 
-          .. warning::
-             This argument `is not yet used <https://github.com/NLnetLabs/cascade/issues/982>`_
-             by Cascade.
-
 .. option:: --client-key <CLIENT_KEY_PATH>
 
           Optional path to a private key for client certificate authentication.
-          THe file will be read and sent to the server.
+          The file will be read and used in the mTLS handshake to the server.
 
           The private key is needed to be able to prove to the KMIP server that
           you are the owner of the provided TLS client certificate.
-
-          .. warning::
-             This argument `is not yet used <https://github.com/NLnetLabs/cascade/issues/982>`_
-             by Cascade.
 
 Server Certificate Verification:
 ++++++++++++++++++++++++++++++++
@@ -156,10 +148,6 @@ Server Certificate Verification:
 
           Optional path to a TLS PEM certificate for the server.
 
-          .. warning::
-             This argument `is not yet used <https://github.com/NLnetLabs/cascade/issues/982>`_
-             by Cascade.
-
 .. option:: --server-name <SERVER_NAME>
 
           Optional name to send as TLS Server Name Indication (SNI) name.
@@ -171,10 +159,6 @@ Server Certificate Verification:
 .. option:: --ca-cert <CA_CERT_PATH>
 
           Optional path to a TLS PEM certificate for a Certificate Authority.
-
-          .. warning::
-             This argument `is not yet used <https://github.com/NLnetLabs/cascade/issues/982>`_
-             by Cascade.
 
 Client Limits:
 ++++++++++++++

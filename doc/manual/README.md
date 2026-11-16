@@ -14,7 +14,7 @@ guidance.
 
 ## Usage
 
-First, [install uv](https://docs.astral.sh/uv/getting-started/installation/).
+First, [install poetry](https://python-poetry.org/docs/).
 Then:
 
 ```sh

@@ -1,19 +1,51 @@
 Architecture
 ============
 
-The Pipeline
-------------
+Cascade's core pipeline runs in a single daemon called :program:`cascaded`. Within
+that process, separate components load zones, coordinate key management, sign
+and review zone versions, persist approved data, and serve published zones.
 
-The Cascade pipeline runs as a single binary and no additional database
-software is required. Zone changes cascade through several stages, letting 
-you review and approve at each step:
+Cascade has two separate models of operation working simultaniously:
+
+#. Active units that run on timers or respond to external events, such as DNS
+   queries, zone transfers, and CLI commands.
+#. Passive per-zone pipelines whose current state determine what is or isn't
+   allowed to happen next.
+
+Cascade's architecture is focused on making it easy to track what's
+happening with your zones at any given point in time, and ensure integrity
+at all times. This is why each zone has its own state machine. A zone
+advances through one pipeline operation at a time, while Cascade can perform
+work for different zones concurrently. The currently published version remains
+available while a newer version is loaded, reviewed, signed, and persisted.
+
+The Zone Pipeline
+-----------------
+
+A zone version moves through the following stages:
+
+#. **Load:** Cascade loads an unsigned zone from a local file or retrieves it
+   from an upstream primary using AXFR or IXFR.
+#. **Review the unsigned zone:** Depending on policy, Cascade proceeds
+   automatically, waits for manual approval, or runs an operator-provided
+   review hook.
+#. **Persist the unsigned zone:** Cascade writes approved input data to disk
+   before sending it to the signer.
+#. **Sign:** The key manager determines the required DNSSEC key state and the
+   signer creates the corresponding DNSSEC records and signatures.
+#. **Review the signed zone:** Cascade can apply a second automatic or manual
+   review before publication.
+#. **Persist and publish:** Cascade persists the approved signed data and then
+   makes that version available to downstream nameservers over AXFR and IXFR.
+   It can send NOTIFY messages to configured downstream servers.
 
 .. figure:: img/cascade-pipeline.svg
    :width: 100%
    :align: center
-   :alt: Schematic view of of the Cascade pipeline
+   :alt: Cascade zone pipeline from loading through review, signing, and publication
 
-   A schematic view of of the Cascade pipeline with the verification stages.
+   An unsigned zone passes through optional review stages before and after
+   signing. Only an approved signed version becomes the published version.
 
 Flexible Signing
 ----------------

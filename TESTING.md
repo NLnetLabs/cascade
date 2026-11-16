@@ -73,9 +73,7 @@ before.
 ### Overriding the build profile to use
 
 By default tests are run using debug profile builds of the Cascade binaries.
-Except for tests that explicitly choose the debug or release build profile, the
-build profile used can be overridden by invoking `./act-wrapper` with argument
-`--input build-profile=XXX` where XXX must be one of debug or release.
+To run tests in release mode, pass `./act-wrapper` the `+release` argument.
 
 
 ### Overriding the log level to use

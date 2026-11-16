@@ -8,16 +8,16 @@
 use std::sync::Arc;
 
 use crate::{
-    DiffData, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data,
+    DiffData, LoadedZoneReviewer, SignedZoneReviewer, ZoneRestorer, ZoneViewer, data::Data,
 };
 
 mod states;
 pub use states::{
     CleanLoadedPendingStorage, CleanSignedPendingStorage, CleanWholePendingStorage,
     CleaningSignedStorage, CleaningStorage, LoadingStorage, PassiveStorage,
-    PersistingLoadedStorage, PersistingSignedStorage, RestoringLoadedStorage,
-    RestoringSignedStorage, ReviewLoadedPendingStorage, ReviewSignedPendingStorage,
-    ReviewingLoadedStorage, ReviewingSignedStorage, SigningStorage, SwitchingStorage,
+    PersistingLoadedStorage, PersistingSignedStorage, RestoringStorage, ReviewLoadedPendingStorage,
+    ReviewSignedPendingStorage, ReviewingLoadedStorage, ReviewingSignedStorage, SigningStorage,
+    SwitchingStorage,
 };
 
 mod transitions;
@@ -33,11 +33,11 @@ mod transitions;
 /// the zone are always achievable without `&mut` access.
 ///
 /// ```text
-/// ╔═══════════════════╗ finish  ╔═══════════════════╗ finish  
-/// ║  RestoringLoaded  ╠═════════▶  RestoringSigned  ╠════════╗  
-/// ╚══╤════════════════╝         ╚══╤════════════════╝        ║  
-///    │ abandon                     │ abandon                 ║  
-/// ┌──▼─────────────────────────────▼─────────────────────────▼─────────┐
+/// ╔═════════════╗ finish  
+/// ║  Restoring  ╠════════╗  
+/// ╚══╤══════════╝        ║  
+///    │ abandon           ║  
+/// ┌──▼───────────────────▼─────────────────────────────────────────────┐
 /// │                            Passive                                 │
 /// └─────────╥────────────────────────────────────────────────────────▲─┘
 ///           ║                                                        │ mark_complete
@@ -48,8 +48,8 @@ mod transitions;
 ///           ║      │                                            ┌─────────────────────┐       stop_review        ┌────────────────────┐                     give_up                                       ║                                                                                                                     
 ///      load ║      │ give_up                                    │  CleanLoadedPending <──────────────────────────│  CleanWholePending <─────────────────────────────────────────────────────┐             ║                                                                                                                                         
 ///           ║      │                                            └────▲─────────────▲──┘                          └────────────────────┘                                                     │             ║                                                                                                                     
-///           ▼      │                                                 │ give_up     └───────────────────────────────────────────────┐ give_up                                                │             ║
-///        ╔═════════╧═╗ finish ╔══════════════════════════╗ start ╔═══════════════════╗ approve ╔════════════════════╗ complete ╔═══│════════════╗ finish ╔═══════════════════════╗ start ╔══════════════════╗
+///           ║      │                                                 │ give_up     └───────────────────────────────────────────────┐ give_up                                                │             ║
+///        ╔══▼══════╧═╗ finish ╔══════════════════════════╗ start ╔═══════════════════╗ approve ╔════════════════════╗ complete ╔═══│════════════╗ finish ╔═══════════════════════╗ start ╔══════════════════╗
 ///        ║  Loading  ╠════════▶  ReviewingLoadedPending  ╠═══════▶  ReviewingLoaded  ╠═════════▶  PersistingLoaded  ╠══════════▶    Signing     ╠════════▶  ReviewSignedPending  ╠═══════▶  ReviewingSigned ║
 ///        ╚═══════════╝        ╚══════════════════════════╝       ╚═══════════════════╝         ╚════════════════════╝          ╚══╤═════════▲═══╝        ╚═══════════════════════╝       ╚════════╤═════════╝
 ///                                                                                                                           retry │         │ complete                                      retry │
@@ -58,11 +58,8 @@ mod transitions;
 ///                                                                                                                              └─────────────────┘                                     └─────────────────────┘
 /// ```
 pub enum ZoneDataStorage {
-    /// The loaded instance of the zone is being restored.
-    RestoringLoaded(RestoringLoadedStorage),
-
-    /// The signed instance of the zone is being restored.
-    RestoringSigned(RestoringSignedStorage),
+    /// The zone is being restored from persisted data.
+    Restoring(RestoringStorage),
 
     /// The zone is passive.
     Passive(PassiveStorage),
@@ -119,14 +116,14 @@ pub enum ZoneDataStorage {
 
 impl ZoneDataStorage {
     /// Construct a new [`ZoneDataStorage`].
-    pub fn new() -> (LoadedZoneRestorer, Self) {
+    pub fn new() -> (ZoneRestorer, Self) {
         let data = Arc::new(Data::new());
 
-        let restorer = unsafe { LoadedZoneRestorer::new(data.clone()) };
+        let restorer = unsafe { ZoneRestorer::new(data.clone()) };
 
-        let storage = RestoringLoadedStorage { data };
+        let storage = RestoringStorage { data };
 
-        (restorer, Self::RestoringLoaded(storage))
+        (restorer, Self::Restoring(storage))
     }
 
     /// Extract the current state of the [`ZoneDataStorage`].
@@ -143,8 +140,7 @@ impl ZoneDataStorage {
     /// This is intended for logging and debugging.
     pub const fn as_str(&self) -> &'static str {
         match self {
-            ZoneDataStorage::RestoringLoaded(_) => "RestoringLoaded",
-            ZoneDataStorage::RestoringSigned(_) => "RestoringSigned",
+            ZoneDataStorage::Restoring(_) => "Restoring",
             ZoneDataStorage::Passive(_) => "Passive",
             ZoneDataStorage::Loading(_) => "Loading",
             ZoneDataStorage::Signing(_) => "Signing",

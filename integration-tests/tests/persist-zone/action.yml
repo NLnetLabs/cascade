@@ -37,7 +37,7 @@ runs:
 
     - name: Increase policy setting max-diffs-size to 150%.
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
         sed -i -e 's|#max-diffs-size.\+|max-diffs-size = 150|' "${POLICY_DIR}/default.toml"
         cascade policy reload
 
@@ -315,11 +315,11 @@ runs:
 
     - name: Edit the source zone and tell NSD to reload it.
       run: |
-        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_DIR=$(scripts/get-default-path.sh test-env:nameserver-base-dir)
         ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
         perl -pi -e 's/1          ; serial/12345      ; serial/' ${ZONE_FILE}
         perl -pi -e 's/www         A   169.254.1.1/www         A   192.168.0.1/' ${ZONE_FILE}
-        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+        ./scripts/manage-test-environment.sh control nsd-primary reload example.test
 
     - name: Wait for Cascade to load the changed zone
       run: |
@@ -375,11 +375,11 @@ runs:
 
     - name: Edit the source zone and tell NSD to reload it.
       run: |
-        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_DIR=$(scripts/get-default-path.sh test-env:nameserver-base-dir)
         ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
         perl -pi -e 's/12345      ; serial/45678      ; serial/' ${ZONE_FILE}
         perl -pi -e 's/www         A   192.168.0.1/www         A   192.168.0.2/' ${ZONE_FILE}
-        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+        ./scripts/manage-test-environment.sh control nsd-primary reload example.test
 
     - name: Wait for Cascade to load the changed zone
       run: |
@@ -618,8 +618,8 @@ runs:
 
     - name: 7 Reduce policy setting max-diffs to 1.
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        TEST_DIR="${PWD}/integration-tests/persist-zone"
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/persist-zone"
         cp "${TEST_DIR}/policies/minimal-diffs.toml" "${POLICY_DIR}/default.toml"
         cascade policy reload
 

@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use camino::Utf8Path;
 use cascade_zonedata::SoaRecord;
+use domain::base::Name;
 use domain::base::{Rtype, Serial, Ttl};
 use domain::dep::octseq::Array;
 use domain::dnssec::sign::keys::keyset::UnixTime;
@@ -17,17 +18,16 @@ use domain::new::base::wire::{BuildBytes, ParseBytes};
 use domain::new::rdata::Soa;
 use domain::tsig::KeyName;
 use domain::utils::dst::UnsizedCopy;
-use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
 use crate::persistence::zone::{
-    PersistedDiffFileInfo, PersistedDiffManager, PersistedDiffRecordSource,
+    PersistedDiffFileInfo, PersistedDiffManager, PersistedDiffRecordSource, PersistenceState,
 };
 use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
 use crate::zone::instance::{
-    LoadedInstanceId, ObsoleteInstance, ObsoleteInstances, ObsoleteLoadedInstance,
+    CurrentInstance, LoadedInstanceId, ObsoleteInstance, ObsoleteInstances, ObsoleteLoadedInstance,
     ObsoleteSignedInstance, PersistedInstance, SignedInstanceId,
 };
 use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
@@ -65,15 +65,6 @@ pub struct Spec {
 
     /// The source of the zone.
     pub source: ZoneLoadSourceSpec,
-
-    /// The minimum expiration time in the signed zone we are serving from
-    /// the publication server.
-    pub min_expiration: Option<Timestamp>,
-
-    /// The minimum expiration time in the most recently signed zone. This
-    /// value should be move to min_expiration after the signed zone is
-    /// approved.
-    pub next_min_expiration: Option<Timestamp>,
 
     /// We expect this from the key manager. These are the types that
     /// the key manager takes control over in the apex. Use this to
@@ -115,15 +106,8 @@ pub struct Spec {
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
 
-    /// Locations of persisted unsigned zone diffs to enable IXFR from
-    /// the upstream to resume on restart, and to enable a complete latest
-    /// unsigned version of the zone to be reconstituted.
-    pub persisted_loaded_diffs: PersistedDiffsSpec,
-
-    /// Locations of persisted signed zone diffs to ensure IXFR out toward
-    /// downstreams is still possible after restart, and to enable a complete
-    /// latest signed version of the zone to be reconsituted.
-    pub persisted_signed_diffs: PersistedDiffsSpec,
+    /// How the zone is persisted to disk.
+    pub persistence: PersistenceSpec,
 }
 
 //--- Conversion
@@ -136,8 +120,6 @@ impl Spec {
             maintenance_mode: zone.maintenance_mode,
             instances: InstancesSpec::build(&zone.instances),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
-            min_expiration: zone.min_expiration,
-            next_min_expiration: zone.next_min_expiration,
             apex_remove: zone.apex_remove.clone(),
             apex_extra: zone.apex_extra.clone(),
             key_tags: zone.key_tags.clone(),
@@ -148,12 +130,7 @@ impl Spec {
                 let offset = zone.history.len().min(1024);
                 zone.history[offset..].to_vec()
             },
-            persisted_loaded_diffs: PersistedDiffsSpec::build_loaded(
-                &zone.persistence.loaded_diffs,
-            ),
-            persisted_signed_diffs: PersistedDiffsSpec::build_signed(
-                &zone.persistence.signed_diffs,
-            ),
+            persistence: PersistenceSpec::build(&zone.persistence),
         }
     }
 }
@@ -774,8 +751,8 @@ impl From<NameserverCommsPolicy> for NameserverCommsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct InstancesSpec {
-    /// The persisted instance of the zone.
-    pub persisted: Option<PersistedInstanceSpec>,
+    /// The current instance of the zone (at the time of persistence).
+    pub current: Option<CurrentInstanceSpec>,
 
     /// Obsolete instances.
     pub obsolete: ObsoleteInstancesSpec,
@@ -784,7 +761,6 @@ pub struct InstancesSpec {
     pub next_loaded_id: u64,
     //
     // TODO:
-    // - Obsolete instances.
     // - Abandoned instances.
 }
 
@@ -797,7 +773,7 @@ impl InstancesSpec {
     /// Parse from this specification.
     pub fn parse(self) -> Instances {
         let Self {
-            persisted,
+            current,
             obsolete,
             next_loaded_id,
         } = self;
@@ -806,7 +782,7 @@ impl InstancesSpec {
             upcoming: None,
             current: None,
             obsolete: obsolete.parse(),
-            persisted: persisted.map(|p| p.parse()),
+            persisted: current.map(|p| p.parse()),
             next_loaded_id,
         }
     }
@@ -822,21 +798,19 @@ impl InstancesSpec {
         } = *instances;
 
         Self {
-            persisted: current
-                .as_ref()
-                .map(|i| PersistedInstanceSpec::build(&i.to_persisted())),
+            current: current.as_ref().map(CurrentInstanceSpec::build),
             obsolete: ObsoleteInstancesSpec::build(obsolete),
             next_loaded_id,
         }
     }
 }
 
-//----------- PersistedInstanceSpec --------------------------------------------
+//----------- CurrentInstanceSpec ----------------------------------------------
 
 /// The persisted instance of a zone.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PersistedInstanceSpec {
+pub struct CurrentInstanceSpec {
     /// The loaded instance.
     pub loaded: LoadedInstanceSpec,
 
@@ -847,7 +821,7 @@ pub struct PersistedInstanceSpec {
     pub pub_time: SystemTime,
 }
 
-impl PersistedInstanceSpec {
+impl CurrentInstanceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> PersistedInstance {
         let Self {
@@ -864,8 +838,8 @@ impl PersistedInstanceSpec {
     }
 
     /// Build into this specification.
-    pub fn build(instance: &PersistedInstance) -> Self {
-        let PersistedInstance {
+    pub fn build(instance: &CurrentInstance) -> Self {
+        let CurrentInstance {
             ref loaded,
             ref signed,
             pub_time,
@@ -1111,6 +1085,9 @@ pub struct SignedInstanceSpec {
 
     /// The number of records included from the loaded instance.
     pub num_loaded_records: u64,
+
+    /// The minimum signature expiration time.
+    pub min_expiration: Option<SystemTime>,
 }
 
 impl SignedInstanceSpec {
@@ -1121,6 +1098,7 @@ impl SignedInstanceSpec {
             soa,
             num_generated_records,
             num_loaded_records,
+            min_expiration,
         } = self;
 
         let id = id.parse();
@@ -1136,6 +1114,7 @@ impl SignedInstanceSpec {
             soa,
             num_generated_records,
             num_loaded_records,
+            min_expiration,
         }
     }
 
@@ -1146,6 +1125,7 @@ impl SignedInstanceSpec {
             ref soa,
             num_generated_records,
             num_loaded_records,
+            min_expiration,
         } = *instance;
 
         let id = SignedInstanceIdSpec::build(id);
@@ -1159,6 +1139,7 @@ impl SignedInstanceSpec {
             soa,
             num_generated_records,
             num_loaded_records,
+            min_expiration,
         }
     }
 }
@@ -1238,6 +1219,60 @@ impl ZoneLoadSourceSpec {
                 addr,
                 tsig_key: tsig_key.map(|key| key.name().clone().into()),
             },
+        }
+    }
+}
+
+//------------ PersistenceSpec -------------------------------------------------
+
+/// How zone contents have been persisted to disk.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistenceSpec {
+    /// The ID of an instance whose snapshot has been persisted to disk.
+    pub snapshot_id: Option<SignedInstanceIdSpec>,
+
+    /// Locations of persisted unsigned zone diffs to enable IXFR from
+    /// the upstream to resume on restart, and to enable a complete latest
+    /// unsigned version of the zone to be reconstituted.
+    pub loaded_diffs: PersistedDiffsSpec,
+
+    /// Locations of persisted signed zone diffs to ensure IXFR out toward
+    /// downstreams is still possible after restart, and to enable a complete
+    /// latest signed version of the zone to be reconsituted.
+    pub signed_diffs: PersistedDiffsSpec,
+}
+
+impl PersistenceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> PersistenceState {
+        let Self {
+            snapshot_id,
+            loaded_diffs,
+            signed_diffs,
+        } = self;
+
+        PersistenceState {
+            ongoing: Default::default(),
+            snapshot_id: snapshot_id.map(|id| id.parse()),
+            loaded_diffs: loaded_diffs.parse(),
+            signed_diffs: signed_diffs.parse(),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(state: &PersistenceState) -> Self {
+        let PersistenceState {
+            ongoing: _,
+            snapshot_id: persisted_snapshot_id,
+            ref loaded_diffs,
+            ref signed_diffs,
+        } = *state;
+
+        Self {
+            snapshot_id: persisted_snapshot_id.map(SignedInstanceIdSpec::build),
+            loaded_diffs: PersistedDiffsSpec::build_loaded(loaded_diffs),
+            signed_diffs: PersistedDiffsSpec::build_signed(signed_diffs),
         }
     }
 }

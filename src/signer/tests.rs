@@ -65,7 +65,7 @@ struct SimpleStorage {
 impl SimpleStorage {
     fn new() -> Self {
         let (restorer, storage) = ZoneDataStorage::new();
-        let ZoneDataStorage::RestoringLoaded(storage) = storage else {
+        let ZoneDataStorage::Restoring(storage) = storage else {
             unreachable!();
         };
         let (loaded_reviewer, signed_reviewer, viewer, storage) = storage.abandon(restorer);
@@ -232,7 +232,6 @@ fn test_full(test_idx: usize, input_idx: usize, denial: SignerDenialSpec) {
         key_tags: Default::default(),
         key_roll: None,
         previous_serial: None,
-        next_min_expiration: None,
     };
 
     super::full::sign_zone(

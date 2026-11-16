@@ -98,7 +98,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/add-zone-query
+      - uses: ./tests/add-zone-query
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -114,7 +114,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/load-zonefile
+      - uses: ./tests/load-zonefile
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -130,7 +130,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/review-unsigned-zone
+      - uses: ./tests/review-unsigned-zone
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -148,7 +148,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/review-unsigned-zone2
+      - uses: ./tests/review-unsigned-zone2
         with:
           log-level: ${{ inputs.log-level }}
           test_idx: ${{ matrix.test_idx }}
@@ -165,7 +165,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/ixfr-in
+      - uses: ./tests/ixfr-in
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -185,7 +185,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/incremental-signing
+      - uses: ./tests/incremental-signing
         with:
           log-level: ${{ inputs.log-level }}
           zonemd: ${{ matrix.zonemd }}
@@ -211,7 +211,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/incremental-signing-nsec-nsec3
+      - uses: ./tests/incremental-signing-nsec-nsec3
         with:
           log-level: ${{ inputs.log-level }}
           zonemd: ${{ matrix.zonemd }}
@@ -230,7 +230,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/notify-in-for-unknown-zone
+      - uses: ./tests/notify-in-for-unknown-zone
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -245,7 +245,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/remove-zone
+      - uses: ./tests/remove-zone
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -260,7 +260,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/all-rr-types
+      - uses: ./tests/all-rr-types
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -276,7 +276,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/upstream-tsig
+      - uses: ./tests/upstream-tsig
         with:
           log-level: ${{ inputs.log-level }}
           key-source-format: ${{ matrix.key-source-format }}
@@ -297,7 +297,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/downstream-tsig
+      - uses: ./tests/downstream-tsig
         with:
           log-level: ${{ inputs.log-level }}
           send-notify-to: ${{ matrix.send-notify-to }}
@@ -316,7 +316,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/review-signed-zone
+      - uses: ./tests/review-signed-zone
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -331,7 +331,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/persist-zone
+      - uses: ./tests/persist-zone
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -347,7 +347,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/persist-then-reject
+      - uses: ./tests/persist-then-reject
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -363,7 +363,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/sign-using-a-hsm
+      - uses: ./tests/sign-using-a-hsm
         with:
           log-level: ${{ inputs.log-level }}
           algorithm: ${{ matrix.algorithm }}
@@ -380,7 +380,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/strip-dnssec-rrs
+      - uses: ./tests/strip-dnssec-rrs
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -396,7 +396,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/load-signed-apex-cname
+      - uses: ./tests/load-signed-apex-cname
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -412,7 +412,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/multipart-axfr
+      - uses: ./tests/multipart-axfr
         with:
           log-level: ${{ inputs.log-level }}
 
@@ -428,6 +428,6 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/set-last-serial
+      - uses: ./tests/set-last-serial
         with:
           log-level: ${{ inputs.log-level }}

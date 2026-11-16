@@ -88,34 +88,6 @@ pub struct KeySetState {
     pub apex_extra: Vec<String>,
 }
 
-pub struct MinTimestamp(Mutex<Option<Timestamp>>);
-
-impl MinTimestamp {
-    pub fn new() -> Self {
-        Self(Mutex::new(None))
-    }
-    pub fn add(&self, ts: Timestamp) {
-        let mut min_ts = self.0.lock().expect("should not fail");
-        if let Some(curr_min) = *min_ts {
-            if ts < curr_min {
-                *min_ts = Some(ts);
-            }
-        } else {
-            *min_ts = Some(ts);
-        }
-    }
-    pub fn get(&self) -> Option<Timestamp> {
-        let min_ts = self.0.lock().expect("should not fail");
-        *min_ts
-    }
-}
-
-impl Default for MinTimestamp {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl std::fmt::Debug for ZoneSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZoneSigner").finish()

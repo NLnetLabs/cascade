@@ -28,7 +28,7 @@ runs:
 
     - name: Add the zone
       run: |
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/load-signed-apex-cname"
+        INTEGRATION_TEST_DIR="${PWD}/load-signed-apex-cname"
         cp "${INTEGRATION_TEST_DIR}/example.test.zone" /tmp/
         cascade zone add --policy default --source /tmp/example.test.zone example.test
 

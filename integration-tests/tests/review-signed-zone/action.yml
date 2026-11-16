@@ -36,8 +36,8 @@ runs:
 
     - name: Add a policy
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-signed-zone"
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
+        INTEGRATION_TEST_DIR="${PWD}/review-signed-zone"
         cp ${INTEGRATION_TEST_DIR}/policies/manual-signed-review.toml ${POLICY_DIR}/
         cascade policy reload
 

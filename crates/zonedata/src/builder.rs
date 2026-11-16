@@ -535,7 +535,7 @@ impl SignedZoneBuilder {
         Some(SignedZoneReplacer::new(
             curr_loaded,
             next_loaded,
-            loaded_diff,
+            loaded_diff.map(|v| &**v),
             curr,
             next,
             &mut self.signed_diff,
@@ -595,7 +595,7 @@ impl SignedZoneBuilder {
         Some(SignedZonePatcher::new(
             curr_loaded,
             next_loaded,
-            loaded_diff,
+            loaded_diff.map(|v| &**v),
             curr,
             next,
             &mut self.signed_diff,

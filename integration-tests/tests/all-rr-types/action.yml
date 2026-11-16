@@ -27,7 +27,7 @@ runs:
 
     - name: Load a zone containing all supported RR types
       run: |
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/all-rr-types"
+        INTEGRATION_TEST_DIR="${PWD}/all-rr-types"
         cascade zone add --source "${INTEGRATION_TEST_DIR}/all.rr.org" --policy default all.rr.org
 
     - name: Check zone status

@@ -56,12 +56,12 @@ runs:
 
     - name: Verify that NSD reports that the zone was fetched via AXFR.
       run: |
-        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
+        STAT=$(./scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
         if [[ "${STAT}" != "num.raxfr=1" ]]; then
           echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
           exit 1
         fi
-        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
+        STAT=$(./scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
         if [[ "${STAT}" != "num.rixfr=0" ]]; then
           echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
           exit 1
@@ -78,11 +78,11 @@ runs:
 
     - name: Edit the source zone and tell NSD to reload it.
       run: |
-        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_DIR=$(scripts/get-default-path.sh test-env:nameserver-base-dir)
         ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
         perl -pi -e 's/1          ; serial/2          ; serial/' ${ZONE_FILE}
         perl -pi -e 's/www         A   169.254.1.1/www         A   192.168.0.1/' ${ZONE_FILE}
-        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+        ./scripts/manage-test-environment.sh control nsd-primary reload example.test
 
     - name: Query changed SOA at the NSD primary
       run: |
@@ -120,12 +120,12 @@ runs:
 
     - name: Verify that NSD reports that the zone was fetched via IXFR.
       run: |
-        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
+        STAT=$(./scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
         if [[ "${STAT}" != "num.raxfr=1" ]]; then
           echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
           exit 1
         fi
-        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
+        STAT=$(./scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
         if [[ "${STAT}" != "num.rixfr=1" ]]; then
           echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
           exit 1
@@ -133,11 +133,11 @@ runs:
 
     - name: Edit the source zone again and tell NSD to reload it.
       run: |
-        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_DIR=$(scripts/get-default-path.sh test-env:nameserver-base-dir)
         ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
         perl -pi -e 's/2          ; serial/3          ; serial/' ${ZONE_FILE}
         perl -pi -e 's/mail        MX  10 example.test./mail        MX  20 example.test./' ${ZONE_FILE}
-        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+        ./scripts/manage-test-environment.sh control nsd-primary reload example.test
 
     - name: Query changed SOA at the NSD primary
       run: |
@@ -174,12 +174,12 @@ runs:
 
     - name: Verify that NSD reports that the zone was fetched via IXFR.
       run: |
-        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
+        STAT=$(./scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
         if [[ "${STAT}" != "num.raxfr=1" ]]; then
           echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
           exit 1
         fi
-        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
+        STAT=$(./scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
         if [[ "${STAT}" != "num.rixfr=2" ]]; then
           echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
           exit 1
