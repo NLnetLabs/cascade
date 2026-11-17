@@ -17,6 +17,7 @@ use domain::dnssec::sign::keys::keyset::UnixTime;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
 
+use crate::zone::instance::{ObsoleteLoadedInstance, ObsoleteSignedInstance};
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
@@ -37,7 +38,7 @@ use crate::units::zone_signer::faketime_or_now;
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
-mod instance;
+pub mod instance;
 pub use instance::{Instances, LoadedInstance, SignedInstance, SignedInstanceId};
 
 pub mod machine;
@@ -156,9 +157,10 @@ impl Zone {
     ///
     /// The current thread is blocked until the write lock can be acquired.
     ///
-    /// The state will be marked dirty; some time after the lock is released,
-    /// the (likely modified) state will be persisted to disk. To guarantee that
-    /// the state is persisted at a particular point, use [`save_state_now()`].
+    /// The state will be marked dirty; some time after the lock is
+    /// released, the (likely modified) state will be persisted to disk.
+    /// To guarantee that the state is persisted at a particular point, use
+    /// [`ZoneHandle::save_state_now()`].
     pub fn write_handle<'a>(self: &'a Arc<Self>, center: &'a Arc<Center>) -> OwnedZoneHandle<'a> {
         OwnedZoneHandle {
             zone: self,
@@ -173,9 +175,10 @@ impl Zone {
     ///
     /// The current thread is blocked until the write lock can be acquired.
     ///
-    /// The state will be marked dirty; some time after the lock is released,
-    /// the (likely modified) state will be persisted to disk. To guarantee that
-    /// the state is persisted at a particular point, use [`save_state_now()`].
+    /// The state will be marked dirty; some time after the lock is
+    /// released, the (likely modified) state will be persisted to disk.
+    /// To guarantee that the state is persisted at a particular point, use
+    /// [`ZoneHandle::save_state_now()`].
     pub fn write<'z>(self: &'z Arc<Self>, center: &Arc<Center>) -> WritableZoneState<'z> {
         let mut writer = self.state.write_cleanly();
         self.mark_dirty(&mut writer, center);
@@ -244,12 +247,15 @@ impl ZoneHandle<'_> {
     pub fn set_policy(&mut self, new: Arc<PolicyVersion>) {
         let _old = self.state.policy.replace(new.clone());
         self.signer().after_policy_change();
+        self.state.instances.after_policy_change(&new);
     }
 
     /// Persist the state of the zone immediately.
     ///
     /// When the function returns, the state will be saved to disk.
     pub fn save_state_now(&mut self) -> io::Result<()> {
+        self.state.check_invariants();
+
         // Determine the save path from the global state.
         let name = &self.zone.name;
         let path = self.center.config.zone_state_dir.join(format!("{name}.db"));
@@ -260,6 +266,7 @@ impl ZoneHandle<'_> {
         }
 
         let spec = state::Spec::build(self.state);
+        tracing::trace!(zone = %self.zone.name, ?spec, "Saving zone state");
         let result = spec.save(&path);
 
         match &result {
@@ -469,6 +476,30 @@ impl ZoneState {
             (Some(i), None) => Some(&i.signed),
             (Some(_), Some(i)) => Some(&i.signed),
         }
+    }
+
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        let Self {
+            instances,
+            machine: _,                // TODO
+            policy: _,                 // TODO
+            maintenance_mode: _,       // TODO
+            enqueued_save: _,          // TODO
+            apex_remove: _,            // TODO
+            apex_extra: _,             // TODO
+            key_tags: _,               // TODO
+            key_roll: _,               // TODO
+            last_signature_refresh: _, // TODO
+            previous_serial: _,        // TODO
+            history: _,                // TODO
+            loader: _,                 // TODO
+            signer: _,                 // TODO
+            storage: _,                // TODO
+            persistence: _,            // TODO
+        } = self;
+
+        instances.check_invariants();
     }
 }
 
@@ -711,32 +742,6 @@ impl Zone {
 
 //----------- Actions ----------------------------------------------------------
 
-/// Persist the state of a zone immediately.
-pub fn save_state_now(center: &Center, zone: &Zone) {
-    // Determine the save path from the global state.
-    let name = &zone.name;
-    let path = center.config.zone_state_dir.join(format!("{name}.db"));
-
-    // Load the actual zone contents.
-    let spec = {
-        let mut state = zone.state.write_cleanly();
-
-        // If there was an enqueued save operation, stop it.
-        if let Some(save) = state.enqueued_save.take() {
-            save.abort();
-        }
-
-        state::Spec::build(&state)
-    };
-
-    match spec.save(&path) {
-        Ok(()) => debug!("Saved the state of zone '{name}' (to '{path}')"),
-        Err(err) => {
-            error!("Could not save the state of zone '{name}' to '{path}': {err}");
-        }
-    }
-}
-
 // /// Change the policy used by a zone.
 // pub fn change_policy(
 //     center: &Arc<Center>,
@@ -804,6 +809,117 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
 //     info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
 //     Ok(())
 // }
+
+//----------- InMemoryDiffTrimmer ----------------------------------------------
+
+/// State for trimming diffs of obsolete instances from memory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InMemoryDiffTrimmer {
+    /// The limits being enforced.
+    pub limits: InMemoryDiffLimits,
+
+    /// The number of diffs observed thus far.
+    pub num_diffs: u64,
+
+    /// The number of records observed thus far across all diffs.
+    pub num_records: u64,
+}
+
+impl InMemoryDiffTrimmer {
+    /// Construct a new trimmer.
+    #[must_use]
+    pub const fn new(limits: InMemoryDiffLimits) -> Self {
+        Self {
+            limits,
+            num_diffs: 0,
+            num_records: 0,
+        }
+    }
+
+    /// Account for the given loaded instance.
+    ///
+    /// If [`Self::exceeded()`] is true after this call, the diff in `instance`
+    /// (and the diffs in all following instances) should be trimmed.
+    pub fn account_loaded(&mut self, instance: &ObsoleteLoadedInstance) {
+        let Some(diff) = &instance.diff_into_next else {
+            return;
+        };
+        self.num_diffs += 1;
+        self.num_records += diff.num_records();
+    }
+
+    /// Account for the given signed instance.
+    ///
+    /// If [`Self::exceeded()`] is true after this call, the diff in `instance`
+    /// (and the diffs in all following instances) should be trimmed.
+    pub fn account_signed(&mut self, instance: &ObsoleteSignedInstance) {
+        let Some(diff) = &instance.diff_into_next else {
+            return;
+        };
+        self.num_diffs += 1;
+        self.num_records += diff.num_records();
+    }
+
+    /// Whether limits have been exceeded.
+    #[must_use]
+    pub const fn exceeded(&self) -> bool {
+        if let Some(max) = self.limits.max_num_diffs
+            && self.num_diffs > max
+        {
+            return true;
+        }
+        if let Some(max) = self.limits.max_num_records
+            && self.num_records > max
+        {
+            return true;
+        }
+        false
+    }
+}
+
+//----------- InMemoryDiffLimits -----------------------------------------------
+
+/// Limits placed on in-memory diffs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InMemoryDiffLimits {
+    /// The maximum number of diffs to hold.
+    pub max_num_diffs: Option<u64>,
+
+    /// The maximum number of records to hold across all diffs.
+    pub max_num_records: Option<u64>,
+}
+
+impl InMemoryDiffLimits {
+    /// Compute the limits to use.
+    ///
+    /// `policy` is the policy currently in use. `latest` is the most recent
+    /// approved signed instance -- the current published instance, if
+    /// available, or the last persisted instance.
+    #[must_use]
+    pub fn compute(policy: &PolicyVersion, latest: &SignedInstance) -> Self {
+        let max_diffs_size_ratio = policy.server.outbound.max_diffs_size as f64 / 100.0;
+        let latest_size = latest.num_records().get();
+        let max_diffs_size = (max_diffs_size_ratio * latest_size as f64) as u64;
+
+        Self {
+            max_num_diffs: Some(policy.server.outbound.max_diffs as u64),
+            max_num_records: Some(max_diffs_size),
+        }
+    }
+
+    /// Whether these limits are weaker than others.
+    ///
+    /// Returns `true` iff `self` is guaranteed to retain more diffs than
+    /// `other`.
+    #[must_use]
+    pub fn is_weaker_than(&self, other: &Self) -> bool {
+        self.max_num_diffs
+            .is_none_or(|n| other.max_num_diffs.is_some_and(|m| n >= m))
+            && self
+                .max_num_records
+                .is_none_or(|n| other.max_num_records.is_some_and(|m| n >= m))
+    }
+}
 
 //----------- ZoneByName -------------------------------------------------------
 

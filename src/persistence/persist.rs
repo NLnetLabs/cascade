@@ -13,11 +13,7 @@ use cascade_zonedata::{
 use domain::new::base::wire::{BuildBytes, TruncationError};
 use tracing::trace;
 
-use crate::{
-    center::Center,
-    persistence::discard_excess_diffs,
-    zone::{Zone, save_state_now},
-};
+use crate::{center::Center, persistence::discard_excess_diffs, zone::Zone};
 
 /// Persist the data for a loaded instance of a zone.
 ///
@@ -35,15 +31,14 @@ pub fn persist_loaded(
 ) -> LoadedZonePersisted {
     let loaded_diff = persister.loaded_diff();
     if !loaded_diff.is_empty() {
-        let destination = {
-            let mut handle = zone.write_handle(center);
-            let loaded_serial = loaded_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
+        let mut handle = zone.write_handle(center);
+        let loaded_serial = loaded_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
+        let destination =
             handle
                 .state
                 .persistence
                 .loaded_diffs
-                .push(zone, center, loaded_serial, None)
-        };
+                .push(zone, center, loaded_serial, None);
 
         // Update the set of persisted zone data file paths BEFORE writing
         // the new file because if we crash/lose power between writing the new
@@ -68,7 +63,8 @@ pub fn persist_loaded(
         // (e.g. using an Option field) that this path is in the process of
         // being written but has not yet finished yet, and then on restore if
         // the Option is Some the referred to path can just be deleted.
-        save_state_now(center, zone);
+        let _ = handle.get().save_state_now();
+        std::mem::drop(handle);
 
         persist_to_file(&destination, loaded_diff.clone());
 
@@ -100,17 +96,16 @@ pub fn persist_signed(
         let loaded_diff = persister.loaded_diff();
         let signed_diff = persister.signed_diff();
 
-        let destination = {
-            let mut handle = zone.write_handle(center);
-            let loaded_serial =
-                loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
-            let signed_serial = signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
+        let mut handle = zone.write_handle(center);
+        let loaded_serial =
+            loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
+        let signed_serial = signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
+        let destination =
             handle
                 .state
                 .persistence
                 .signed_diffs
-                .push(zone, center, loaded_serial, signed_serial)
-        };
+                .push(zone, center, loaded_serial, signed_serial);
 
         // Update the set of persisted zone data file paths BEFORE writing
         // the new file because if we crash/lose power between writing the new
@@ -135,7 +130,8 @@ pub fn persist_signed(
         // (e.g. using an Option field) that this path is in the process of
         // being written but has not yet finished yet, and then on restore if
         // the Option is Some the referred to path can just be deleted.
-        save_state_now(center, zone);
+        let _ = handle.get().save_state_now();
+        std::mem::drop(handle);
 
         // Write the diff to disk as a binary AXFR snapshot or binary IXFR
         // diff.
