@@ -104,6 +104,20 @@ impl DiffData {
             origin,
         }
     }
+
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        if let Some(soa) = &self.removed_soa {
+            assert!(self.removed_records.contains(&soa.clone().into()));
+        }
+        if let Some(soa) = &self.added_soa {
+            assert!(self.added_records.contains(&soa.clone().into()));
+        }
+        assert!(self.removed_records.is_sorted());
+        assert!(self.added_records.is_sorted());
+
+        // TODO: Check that the zone apex name is consistent.
+    }
 }
 
 //----------- RecordsIter ------------------------------------------------------

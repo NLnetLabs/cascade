@@ -377,8 +377,7 @@ fn main() -> ExitCode {
         state.zones.iter().map(|z| z.0.clone()).collect::<Vec<_>>()
     };
     for zone in zones {
-        // TODO: Maybe 'save_state_now()' should take '&Config'?
-        self::zone::save_state_now(&center, &zone);
+        let _ = zone.write_handle(&center).get().save_state_now();
     }
 
     result

@@ -156,9 +156,10 @@ impl Zone {
     ///
     /// The current thread is blocked until the write lock can be acquired.
     ///
-    /// The state will be marked dirty; some time after the lock is released,
-    /// the (likely modified) state will be persisted to disk. To guarantee that
-    /// the state is persisted at a particular point, use [`save_state_now()`].
+    /// The state will be marked dirty; some time after the lock is
+    /// released, the (likely modified) state will be persisted to disk.
+    /// To guarantee that the state is persisted at a particular point, use
+    /// [`ZoneHandle::save_state_now()`].
     pub fn write_handle<'a>(self: &'a Arc<Self>, center: &'a Arc<Center>) -> OwnedZoneHandle<'a> {
         OwnedZoneHandle {
             zone: self,
@@ -173,9 +174,10 @@ impl Zone {
     ///
     /// The current thread is blocked until the write lock can be acquired.
     ///
-    /// The state will be marked dirty; some time after the lock is released,
-    /// the (likely modified) state will be persisted to disk. To guarantee that
-    /// the state is persisted at a particular point, use [`save_state_now()`].
+    /// The state will be marked dirty; some time after the lock is
+    /// released, the (likely modified) state will be persisted to disk.
+    /// To guarantee that the state is persisted at a particular point, use
+    /// [`ZoneHandle::save_state_now()`].
     pub fn write<'z>(self: &'z Arc<Self>, center: &Arc<Center>) -> WritableZoneState<'z> {
         let mut writer = self.state.write_cleanly();
         self.mark_dirty(&mut writer, center);
@@ -250,6 +252,8 @@ impl ZoneHandle<'_> {
     ///
     /// When the function returns, the state will be saved to disk.
     pub fn save_state_now(&mut self) -> io::Result<()> {
+        self.state.check_invariants();
+
         // Determine the save path from the global state.
         let name = &self.zone.name;
         let path = self.center.config.zone_state_dir.join(format!("{name}.db"));
@@ -260,6 +264,7 @@ impl ZoneHandle<'_> {
         }
 
         let spec = state::Spec::build(self.state);
+        tracing::trace!(zone = %self.zone.name, ?spec, "Saving zone state");
         let result = spec.save(&path);
 
         match &result {
@@ -469,6 +474,30 @@ impl ZoneState {
             (Some(i), None) => Some(&i.signed),
             (Some(_), Some(i)) => Some(&i.signed),
         }
+    }
+
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        let Self {
+            instances,
+            machine: _,                // TODO
+            policy: _,                 // TODO
+            maintenance_mode: _,       // TODO
+            enqueued_save: _,          // TODO
+            apex_remove: _,            // TODO
+            apex_extra: _,             // TODO
+            key_tags: _,               // TODO
+            key_roll: _,               // TODO
+            last_signature_refresh: _, // TODO
+            previous_serial: _,        // TODO
+            history: _,                // TODO
+            loader: _,                 // TODO
+            signer: _,                 // TODO
+            storage: _,                // TODO
+            persistence: _,            // TODO
+        } = self;
+
+        instances.check_invariants();
     }
 }
 
@@ -710,32 +739,6 @@ impl Zone {
 }
 
 //----------- Actions ----------------------------------------------------------
-
-/// Persist the state of a zone immediately.
-pub fn save_state_now(center: &Center, zone: &Zone) {
-    // Determine the save path from the global state.
-    let name = &zone.name;
-    let path = center.config.zone_state_dir.join(format!("{name}.db"));
-
-    // Load the actual zone contents.
-    let spec = {
-        let mut state = zone.state.write_cleanly();
-
-        // If there was an enqueued save operation, stop it.
-        if let Some(save) = state.enqueued_save.take() {
-            save.abort();
-        }
-
-        state::Spec::build(&state)
-    };
-
-    match spec.save(&path) {
-        Ok(()) => debug!("Saved the state of zone '{name}' (to '{path}')"),
-        Err(err) => {
-            error!("Could not save the state of zone '{name}' to '{path}': {err}");
-        }
-    }
-}
 
 // /// Change the policy used by a zone.
 // pub fn change_policy(

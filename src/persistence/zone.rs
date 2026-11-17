@@ -45,6 +45,9 @@ impl ZonePersistenceHandle<'_> {
     pub(super) fn reset_state_due_to_abandoned_restore(&mut self) {
         self.clear();
 
+        // Mark the persisted instance as obsolete.
+        self.state.instances.obsolete_persisted();
+
         // Remove any already enqueued signing operation that is blocked by
         // the ongoing restore as it will otherwise immediately start once the
         // restore completes.
