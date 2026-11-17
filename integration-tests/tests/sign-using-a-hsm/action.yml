@@ -70,6 +70,82 @@ runs:
       run: |
         cascade zone status --detailed example.test | grep -Fq 'kmip://'
 
+    - name: Record KMIP keys, remove zone, and add the zone with imported KMIP keys
+      run: |
+        split_kmip_url() {
+            server=$(echo "$1" | sed 's,kmip://\([^/]*\).*,\1,')
+            id=$(echo "$1" | sed 's,.*keys/\([^/]*\)_pub.*,\1,')
+            algorithm=$(echo "$1" | sed 's,.*algorithm=\([^&]*\).*,\1,')
+            flags=$(echo "$1" | sed 's,.*flags=\(.*\)$,\1,')
+            echo "$server" "$id" "$algorithm" "$flags"
+        }
+        cascade zone status --detailed example.test | grep 'Reference:' |
+            sed 's/.*kmip/kmip/' > /tmp/keys
+            while read url
+            do
+                set -- $(split_kmip_url "$url")
+                if [ "$4" = 257 ]
+                then
+                    ksk_server="$1"
+                    ksk_id="$2"
+                    ksk_algorithm="$3"
+                    ksk_flags="$4"
+                else
+                    zsk_server="$1"
+                    zsk_id="$2"
+                    zsk_algorithm="$3"
+                    zsk_flags="$4"
+                fi
+            done < /tmp/keys
+        echo "ksk: $ksk_server $ksk_id $ksk_algorithm $ksk_flags"
+        echo "zsk: $zsk_server $zsk_id $zsk_algorithm $zsk_flags"
+        # Remove the existing zone
+        cascade zone maintenance enable example.test
+        cascade zone remove example.test
+        # Add the new zone with imported keys
+        # Should use the algorithm for this test instead of what we found
+        # in the URL. Currently Cascade sends the string unchecked to
+        # keyset which only accepts a number.
+        cascade zone add \
+            --import-ksk-kmip "$ksk_server" "$ksk_id"_pub "$ksk_id"_priv "$ksk_algorithm" "$ksk_flags" \
+            --import-zsk-kmip "$zsk_server" "$zsk_id"_pub "$zsk_id"_priv "$zsk_algorithm" "$zsk_flags" \
+            --policy with-hsm --source 127.0.0.1:1055 example.test
+        # Check that the keys are imported.
+        cascade zone status --detailed example.test | grep 'Reference:' |
+            grep -Fq "$ksk_id"
+        cascade zone status --detailed example.test | grep 'Reference:' |
+            grep -Fq "$zsk_id"
+        # Start a ZSK roll
+        cascade keyset example.test zsk start-roll
+        # Check that we got a new KMIP key
+        cascade zone status --detailed example.test | grep 'Reference:' |
+            grep -v "$ksk_id" |
+            grep -v "$zsk_id" |
+            grep -Fq 'kmip://'
+        # Remove the zone again and now try with a policy that keeps keys in
+        # files.
+        cascade zone maintenance enable example.test
+        cascade zone remove example.test
+        # Add the new zone with imported keys
+        # Should use the algorithm for this test instead of what we found
+        # in the URL.
+        cascade zone add \
+            --import-ksk-kmip "$ksk_server" "$ksk_id"_pub "$ksk_id"_priv "$ksk_algorithm" "$ksk_flags" \
+            --import-zsk-kmip "$zsk_server" "$zsk_id"_pub "$zsk_id"_priv "$zsk_algorithm" "$zsk_flags" \
+            --policy default --source 127.0.0.1:1055 example.test
+        # Check that the keys are imported.
+        cascade zone status --detailed example.test | grep 'Reference:' |
+            grep -Fq "$ksk_id"
+        cascade zone status --detailed example.test | grep 'Reference:' |
+            grep -Fq "$zsk_id"
+        # Start a ZSK roll
+        cascade keyset example.test algorithm start-roll
+        # Check that we got a new KMIP key
+        cascade zone status --detailed example.test | grep 'Reference:' |
+            grep -v "$ksk_id" |
+            grep -v "$zsk_id" |
+            grep -Fq 'file://'
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()
