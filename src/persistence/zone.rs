@@ -10,7 +10,7 @@ use bytes::Bytes;
 use camino::Utf8PathBuf;
 use cascade_zonedata::DiffData;
 use domain::{base::Name, new::base::SoaSerial};
-use tracing::{debug, error, info, trace, trace_span, warn};
+use tracing::{debug, error, trace, trace_span, warn};
 
 use crate::{
     center::Center,
@@ -81,31 +81,6 @@ impl ZonePersistenceHandle<'_> {
             .obsolete
             .remove_persistence_files(&self.zone.name, &self.center.config);
 
-        for file_info in self
-            .state
-            .persistence
-            .loaded_diffs
-            .diff_infos
-            .iter()
-            .chain(self.state.persistence.signed_diffs.diff_infos.iter())
-        {
-            if file_info.path.exists()
-                && file_info
-                    .path
-                    .starts_with(self.center.config.zone_state_dir.as_std_path())
-            {
-                info!(
-                    "Removing persisted zone data file '{}'",
-                    file_info.path.display()
-                );
-                if let Err(err) = std::fs::remove_file(&file_info.path) {
-                    warn!(
-                        "Failed to remove persisted zone data file '{}': {err}",
-                        file_info.path.display()
-                    );
-                }
-            }
-        }
         self.state.persistence.loaded_diffs.clear();
         self.state.persistence.signed_diffs.clear();
         self.state.storage.diffs.clear();
