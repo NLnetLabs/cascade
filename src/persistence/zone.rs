@@ -596,60 +596,6 @@ impl PersistedDiffManager {
         }
     }
 
-    pub fn push(
-        &mut self,
-        zone: &Arc<Zone>,
-        center: &Arc<Center>,
-        loaded_serial: Option<SoaSerial>,
-        signed_serial: Option<SoaSerial>,
-    ) -> PathBuf {
-        // Catch issues like https://github.com/NLnetLabs/cascade/issues/825:
-        // If both serials are None the diff represents a snapshot which we
-        // should only receive if we have no stored diff paths already. We
-        // could delete the existing diff_infos entries at this point but that
-        // would leave behind any actual diffs at those paths on disk, and
-        // if we are wrong we will interfere with normal Cascade operation by
-        // discarding diff paths that we should not be discarding. So we can't
-        // handle this heere and should never get into this state so just
-        // abort as something is seriously wrong.
-        assert!(
-            self.diff_infos.is_empty() || loaded_serial.is_some() || signed_serial.is_some(),
-            "Pushed diff should either be a snapshot or related to a prior diff (# diff infos={}, loaded serial: {loaded_serial:?}, signed serial: {signed_serial:?})",
-            self.diff_infos.len()
-        );
-
-        let zone_name = &zone.name;
-        let data_file_type = match self.record_source {
-            PersistedDiffRecordSource::Loaded => "loaded",
-            PersistedDiffRecordSource::Signed => "signed",
-        };
-
-        let path = center
-            .config
-            .zone_state_dir
-            .join(format!(
-                "{zone_name}.{data_file_type}.{}",
-                self.next_uniqifier
-            ))
-            .into_std_path_buf();
-        let file_info = PersistedDiffFileInfo::new(
-            self.next_uniqifier,
-            path.clone(),
-            loaded_serial,
-            signed_serial,
-        );
-
-        trace!(
-            "Pushing diff with loaded serial {loaded_serial:?} and signed serial {signed_serial:?} for zone '{}' with path '{}'",
-            zone.name,
-            path.display()
-        );
-        assert!(self.diff_infos.insert(file_info));
-        self.next_uniqifier = self.next_uniqifier.checked_add(1).unwrap();
-
-        path
-    }
-
     pub fn cleanup(&mut self, serial: Option<SoaSerial>) {
         // If no serial number is provided we can only cleanup the initial
         // snapshot, and we should only do that if we have only a snapshot
@@ -880,35 +826,6 @@ impl IxfrZoneDiffs {
 
     pub fn num_signed_diffs(&self) -> usize {
         self.signed_diffs.len()
-    }
-
-    pub fn store_loaded_diff(&mut self, diff: Arc<DiffData>) {
-        let from_serial = diff.removed_soa.as_ref().map(|s| s.rdata.serial).unwrap();
-        let to_serial = diff.added_soa.as_ref().map(|s| s.rdata.serial).unwrap();
-        let old = self.loaded_diffs.insert(from_serial.into(), diff);
-        log_stored_diff("loaded", old.is_some(), from_serial, to_serial);
-        // TODO: Ideally we would invoke self.trim() here but we lack the
-        // necessary information to do so.
-    }
-
-    pub fn store_signed_diff(&mut self, mut loaded_serial: Option<SoaSerial>, diff: Arc<DiffData>) {
-        let from_serial = diff.removed_soa.as_ref().map(|s| s.rdata.serial).unwrap();
-        let to_serial = diff.added_soa.as_ref().map(|s| s.rdata.serial).unwrap();
-
-        // Do we actually have a diff from the given removed loaded SOA
-        // serial? We won't have one if the loaded zone has never changed.
-        if let Some(serial) = loaded_serial
-            && !self.loaded_diffs.contains_key(&serial.get())
-        {
-            // Don't store a reference to a loaded diff that we don't have.
-            loaded_serial = None;
-        }
-
-        let related_diff = RelatedSignedDiff::new(diff, loaded_serial);
-        let old = self.signed_diffs.insert(from_serial.into(), related_diff);
-        log_stored_diff("signed", old.is_some(), from_serial, to_serial);
-        // TODO: Ideally we would invoke self.trim() here but we lack the
-        // necessary information to do so.
     }
 
     pub fn get(&self, from_serial: SoaSerial) -> Vec<(Arc<DiffData>, Arc<DiffData>)> {
