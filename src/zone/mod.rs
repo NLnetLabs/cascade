@@ -470,19 +470,6 @@ impl ZoneState {
         !self.maintenance_mode && matches!(&self.machine, ZoneStateMachine::Waiting(_))
     }
 
-    /// Get the most recent signed metadata for the zone.
-    ///
-    /// During restore the metadata for the currently published instance is
-    /// not available yet so use the last persisted zone metadata instead.
-    pub fn signed_metadata(&self) -> Option<&SignedInstance> {
-        match (&self.instances.persisted, &self.instances.current) {
-            (None, None) => None,
-            (None, Some(i)) => Some(&i.signed),
-            (Some(i), None) => Some(&i.signed),
-            (Some(_), Some(i)) => Some(&i.signed),
-        }
-    }
-
     /// Check invariants.
     pub fn check_invariants(&self) {
         let Self {
