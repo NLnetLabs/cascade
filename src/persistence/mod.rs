@@ -194,6 +194,7 @@ use crate::{
     },
 };
 
+mod compact;
 mod persist;
 mod restore;
 
