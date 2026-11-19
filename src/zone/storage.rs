@@ -35,7 +35,6 @@ use crate::zonedata::{
 };
 use crate::{
     center::Center,
-    persistence::zone::IxfrZoneDiffs,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState},
@@ -718,11 +717,6 @@ impl StorageZoneHandle<'_> {
             let old_loaded_reviewer =
                 LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
 
-            let removed_serial = old_loaded_reviewer
-                .loaded_diff()
-                .and_then(|d| d.removed_soa.clone())
-                .map(|r| r.rdata.serial);
-
             // Examine the current state.
             let mut handle = zone.write_handle(&center);
             let cleaner = match transition(&mut handle.state.storage.machine) {
@@ -736,16 +730,6 @@ impl StorageZoneHandle<'_> {
 
                 _ => unreachable!("The zone was left in 'CleanWholePending' state"),
             };
-
-            // When a signed review is abandoned both the signed AND loaded
-            // data are cleaned up in memory by the CleanWholePending
-            // transition. To match this we also need to cleanup the persisted
-            // loaded diff that was written when loaded review succeeded.
-            handle
-                .state
-                .persistence
-                .loaded_diffs
-                .cleanup(removed_serial);
 
             handle.storage().start_cleanup(cleaner);
 
@@ -801,9 +785,6 @@ pub struct StorageState {
     /// passed to [`StorageZoneHandle::abandon_restoration()`].
     pub restorer: Option<ZoneRestorer>,
 
-    /// Diffs from one serial to another for responding to IXFR requests.
-    pub diffs: IxfrZoneDiffs,
-
     /// Ongoing background tasks.
     ///
     /// When the zone data needs to be cleaned or persisted, a background task
@@ -819,7 +800,6 @@ impl StorageState {
         Self {
             machine,
             restorer: Some(restorer),
-            diffs: Default::default(),
             background_tasks: Default::default(),
         }
     }

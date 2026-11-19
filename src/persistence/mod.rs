@@ -181,7 +181,7 @@
 use std::{sync::Arc, time::Duration};
 
 use cascade_zonedata::ZoneRestorer;
-use tracing::{debug, trace, warn};
+use tracing::{debug, warn};
 
 use crate::{
     center::Center,
@@ -379,11 +379,6 @@ fn restore<'a>(
             restored
                 .obsolete
                 .apply(&mut handle.state.instances.obsolete);
-
-            trace!(
-                "Restored diffs: {:?}",
-                handle.state.persistence.loaded_diffs
-            );
 
             let restored = restorer.finish().unwrap_or_else(|_| {
                 unreachable!("Zone restoration should have built new zone data")
