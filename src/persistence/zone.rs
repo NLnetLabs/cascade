@@ -14,7 +14,10 @@ use tracing::{debug, error, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
-    persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
+    persistence::{
+        compact::compact,
+        persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
+    },
     util::BackgroundTasks,
     zone::{
         LoadedInstance, SignedInstance, SignedInstanceId, Zone, ZoneHandle, ZoneState,
@@ -124,6 +127,50 @@ impl ZonePersistenceHandle<'_> {
             .spawn_blocking(span, move || {
                 PersistenceState::compact(&center, &zone);
                 let mut handle = zone.write_handle(&center);
+                handle.state.persistence.ongoing.finish();
+            });
+
+        let Some(current) = self.state.instances.current.clone() else {
+            trace!("Skipping compaction: no current instance");
+            return;
+        };
+        let Some(snapshot_id) = self.state.persistence.snapshot_id else {
+            warn!("Bug: current instance set but no snapshot ID found");
+            return;
+        };
+        let obsolete = self.state.instances.obsolete.clone();
+        let Some(policy) = self.state.policy.clone() else {
+            trace!("Skipping compaction: missing policy");
+            return;
+        };
+        let Some(viewer) = self.center.publication_server.viewer(self.zone) else {
+            trace!("Skipping compaction: missing publication viewer");
+            return;
+        };
+        let Ok(viewer) = viewer.try_read_owned() else {
+            trace!("Skipping compaction: could not lock publication viewer");
+            return;
+        };
+        if viewer.read().is_none() {
+            trace!("Skipping compaction: publication viewer appears empty");
+            return;
+        }
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        let span = trace_span!("compact");
+        self.state
+            .persistence
+            .ongoing
+            .spawn_blocking(span, move || {
+                let mut handle = compact(
+                    &zone,
+                    &center,
+                    viewer.read().unwrap(),
+                    &policy,
+                    &current,
+                    &obsolete,
+                    snapshot_id,
+                );
                 handle.state.persistence.ongoing.finish();
             });
     }
