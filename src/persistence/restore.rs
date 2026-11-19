@@ -529,8 +529,12 @@ fn restore_signed(
         }
 
         let state = &mut *state;
-        if let Some(policy) = &state.policy {
-            state.instances.discard_excess_diffs(policy);
+        if let Some(policy) = &state.policy
+            && let Some(snapshot_id) = state.persistence.snapshot_id
+        {
+            state
+                .instances
+                .discard_excess_diffs(policy, snapshot_id, &zone.name, &center.config);
         }
     }
 

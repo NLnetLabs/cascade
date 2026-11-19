@@ -485,15 +485,22 @@ impl<'a> ZoneHandle<'a> {
         let viewer = self.storage().finish_signed_persistence(persisted);
 
         // If there was no current instance, a snapshot was persisted.
-        let new_snapshot = self.state.instances.current.is_none();
+        let snapshot_id = *self.state.persistence.snapshot_id.get_or_insert(
+            self.state
+                .instances
+                .upcoming
+                .as_ref()
+                .unwrap()
+                .signed
+                .as_ref()
+                .unwrap()
+                .id,
+        );
 
         let policy = self.state.policy.as_ref().unwrap();
-        self.state.instances.switch(policy);
-
-        if new_snapshot {
-            self.state.persistence.snapshot_id =
-                Some(self.state.instances.current.as_ref().unwrap().signed.id);
-        }
+        self.state
+            .instances
+            .switch(policy, snapshot_id, &self.zone.name, &self.center.config);
 
         let serial = self
             .state
@@ -503,6 +510,10 @@ impl<'a> ZoneHandle<'a> {
             .unwrap()
             .signed
             .serial();
+
+        // Persist the zone state file before publishing the zone, to (try to)
+        // ensure Cascade can continue publishing the zone after a crash.
+        let _ = self.save_state_now();
 
         info!(
             "Published a signed instance of '{}' with SOA serial {}",

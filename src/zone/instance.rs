@@ -49,11 +49,11 @@ use domain::{
     },
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::{
     policy::PolicyVersion,
-    zone::{InMemoryDiffLimits, InMemoryDiffTrimmer},
+    zone::{InMemoryDiffLimits, InMemoryDiffTrimmer, PersistedDiffLimits, PersistedDiffTrimmer},
 };
 
 //----------- Instances --------------------------------------------------------
@@ -280,7 +280,13 @@ impl Instances {
     /// - There is no upcoming instance.
     /// - The upcoming instance is malformed.
     /// - A re-sign took place but there is no current loaded instance.
-    pub fn switch(&mut self, policy: &PolicyVersion) {
+    pub fn switch(
+        &mut self,
+        policy: &PolicyVersion,
+        snapshot_id: SignedInstanceId,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) {
         let pub_time = SystemTime::now();
 
         let upcoming = self
@@ -374,7 +380,7 @@ impl Instances {
         }
 
         // New obsolete diffs were added; discard excess ones.
-        self.discard_excess_diffs(policy);
+        self.discard_excess_diffs(policy, snapshot_id, zone_name, config);
     }
 
     /// Abandon the upcoming instance entirely.
@@ -447,8 +453,14 @@ impl Instances {
 }
 
 impl Instances {
-    /// Discard old in-memory diffs exceeding policy limits.
-    pub fn discard_excess_diffs(&mut self, policy: &PolicyVersion) {
+    /// Discard old in-memory and persisted diffs exceeding policy limits.
+    pub fn discard_excess_diffs(
+        &mut self,
+        policy: &PolicyVersion,
+        snapshot_id: SignedInstanceId,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) {
         // Look up information about the current signed instance (or the
         // persisted one, if it has not been restored yet), as a basis for
         // policy limits.
@@ -461,18 +473,41 @@ impl Instances {
             return;
         };
 
-        let limits = InMemoryDiffLimits::compute(policy, latest);
-        self.obsolete.discard_excess_diffs(limits);
+        // NOTE: If the current instance has a persisted diff, it cannot also
+        // be the snapshotted instance, and thus the diff is necessary for
+        // restoring zone data on restart. Thus, there is never reason to trim
+        // that diff, we don't need to try processing it here.
+
+        let in_mem_limits = InMemoryDiffLimits::compute(policy, latest);
+        let persist_limits = PersistedDiffLimits::compute(policy);
+        self.obsolete.discard_excess_diffs(
+            in_mem_limits,
+            persist_limits,
+            snapshot_id,
+            zone_name,
+            config,
+        );
     }
 }
 
 impl Instances {
     /// React to a change in policy.
-    pub fn after_policy_change(&mut self, new: &PolicyVersion) {
+    pub fn after_policy_change(
+        &mut self,
+        new: &PolicyVersion,
+        snapshot_id: Option<SignedInstanceId>,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) {
         // The policy for in-memory diffs might have changed.
         // NOTE: We could check whether the relevant bits of policy have
         // changed, but it's not that important.
-        self.discard_excess_diffs(new);
+        let Some(snapshot_id) = snapshot_id else {
+            // There is no snapshot, so there is no current instance of the
+            // zone, so there won't be any older instances to discard diffs for.
+            return;
+        };
+        self.discard_excess_diffs(new, snapshot_id, zone_name, config);
     }
 
     /// Check invariants.
@@ -782,30 +817,59 @@ impl ObsoleteInstances {
     }
 
     /// Discard old in-memory diffs exceeding the specified limits.
-    pub fn discard_excess_diffs(&mut self, limits: InMemoryDiffLimits) {
+    pub fn discard_excess_diffs(
+        &mut self,
+        in_mem_limits: InMemoryDiffLimits,
+        persist_limits: PersistedDiffLimits,
+        snapshot_id: SignedInstanceId,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) {
         // Iterate from the newest to the oldest instances. Iterate loaded
         // instances before the signed instances associated with them.
-        let mut trimmer = InMemoryDiffTrimmer::new(limits);
+        let mut in_mem_trimmer = InMemoryDiffTrimmer::new(in_mem_limits);
+        let mut persist_trimmer = PersistedDiffTrimmer::new(persist_limits);
         for i in self.latest_signed.iter_mut().rev() {
-            trimmer.account_signed(i);
-            if trimmer.exceeded() {
-                debug!(id = ?i.id, "Trimming diff for signed instance");
+            in_mem_trimmer.account_signed(i);
+            persist_trimmer.account_signed(i);
+            if in_mem_trimmer.exceeded() && i.diff_into_next.is_some() {
+                debug!(id = ?i.id, "Trimming in-memory diff for signed instance");
                 i.diff_into_next = None;
+            }
+            if persist_trimmer.exceeded() && i.id < snapshot_id {
+                // NOTE: We can't tell whether the persistence files exist, or
+                // have been removed already, so log at `trace` level.
+                trace!(id = ?i.id, "Removing persistence files for signed instance");
+                let _ = i.remove_persistence_files(zone_name, config);
             }
         }
         for is in self.per_load.iter_mut().rev() {
             let i = &mut is.loaded;
-            trimmer.account_loaded(i);
-            if trimmer.exceeded() {
-                debug!(id = ?i.id, "Trimming diff for loaded instance");
+            in_mem_trimmer.account_loaded(i);
+            persist_trimmer.account_loaded(i);
+            if in_mem_trimmer.exceeded() && i.diff_into_next.is_some() {
+                debug!(id = ?i.id, "Trimming in-memory diff for loaded instance");
                 i.diff_into_next = None;
+            }
+            if persist_trimmer.exceeded() && i.id < snapshot_id.0 {
+                // NOTE: We can't tell whether the persistence files exist, or
+                // have been removed already, so log at `trace` level.
+                trace!(id = ?i.id, "Trimming persistence files for loaded instance");
+                let _ = i.remove_persistence_files(zone_name, config);
             }
 
             for i in is.signed.iter_mut().rev() {
-                trimmer.account_signed(i);
-                if trimmer.exceeded() {
-                    debug!(id = ?i.id, "Trimming diff for signed instance");
+                in_mem_trimmer.account_signed(i);
+                persist_trimmer.account_signed(i);
+                if in_mem_trimmer.exceeded() && i.diff_into_next.is_some() {
+                    debug!(id = ?i.id, "Trimming in-memory diff for signed instance");
                     i.diff_into_next = None;
+                }
+                if persist_trimmer.exceeded() && i.id < snapshot_id {
+                    // NOTE: We can't tell whether the persistence files exist,
+                    // or have been removed already, so log at `trace` level.
+                    trace!(id = ?i.id, "Trimming persistence files for signed instance");
+                    let _ = i.remove_persistence_files(zone_name, config);
                 }
             }
         }
