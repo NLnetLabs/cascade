@@ -247,7 +247,12 @@ impl ZoneHandle<'_> {
     pub fn set_policy(&mut self, new: Arc<PolicyVersion>) {
         let _old = self.state.policy.replace(new.clone());
         self.signer().after_policy_change();
-        self.state.instances.after_policy_change(&new);
+        self.state.instances.after_policy_change(
+            &new,
+            self.state.persistence.snapshot_id,
+            &self.zone.name,
+            &self.center.config,
+        );
     }
 
     /// Persist the state of the zone immediately.
@@ -838,8 +843,8 @@ impl InMemoryDiffTrimmer {
 
     /// Account for the given loaded instance.
     ///
-    /// If [`Self::exceeded()`] is true after this call, the diff in `instance`
-    /// (and the diffs in all following instances) should be trimmed.
+    /// If [`Self::exceeded()`] is true after this call, the in-memory diff in
+    /// `instance` (and the diffs in all older instances) should be trimmed.
     pub fn account_loaded(&mut self, instance: &ObsoleteLoadedInstance) {
         let ObsoleteLoadedInstance {
             inner: _,
@@ -860,8 +865,8 @@ impl InMemoryDiffTrimmer {
 
     /// Account for the given signed instance.
     ///
-    /// If [`Self::exceeded()`] is true after this call, the diff in `instance`
-    /// (and the diffs in all following instances) should be trimmed.
+    /// If [`Self::exceeded()`] is true after this call, the in-memory diff in
+    /// `instance` (and the diffs in all older instances) should be trimmed.
     pub fn account_signed(&mut self, instance: &ObsoleteSignedInstance) {
         let ObsoleteSignedInstance {
             inner: _,
@@ -935,6 +940,91 @@ impl InMemoryDiffLimits {
             && self
                 .max_num_records
                 .is_none_or(|n| other.max_num_records.is_some_and(|m| n >= m))
+    }
+}
+
+//----------- PersistedDiffTrimmer ---------------------------------------------
+
+/// State for trimming persisted diffs of obsolete instances.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PersistedDiffTrimmer {
+    /// The limits being enforced.
+    pub limits: PersistedDiffLimits,
+
+    /// The number of diffs observed thus far.
+    pub num_diffs: u64,
+}
+
+impl PersistedDiffTrimmer {
+    /// Construct a new trimmer.
+    #[must_use]
+    pub const fn new(limits: PersistedDiffLimits) -> Self {
+        Self {
+            limits,
+            num_diffs: 0,
+        }
+    }
+
+    /// Account for the given loaded instance.
+    ///
+    /// If [`Self::exceeded()`] is true after this call, the persisted diff for
+    /// `instance` (and the diffs in all older instances) should be trimmed.
+    pub fn account_loaded(&mut self, instance: &ObsoleteLoadedInstance) {
+        let _ = instance;
+        self.num_diffs += 1;
+    }
+
+    /// Account for the given signed instance.
+    ///
+    /// If [`Self::exceeded()`] is true after this call, the persisted diff for
+    /// `instance` (and the diffs in all older instances) should be trimmed.
+    pub fn account_signed(&mut self, instance: &ObsoleteSignedInstance) {
+        let _ = instance;
+        self.num_diffs += 1;
+    }
+
+    /// Whether limits have been exceeded.
+    #[must_use]
+    pub const fn exceeded(&self) -> bool {
+        if let Some(max) = self.limits.max_num_diffs
+            && self.num_diffs > max
+        {
+            return true;
+        }
+        false
+    }
+}
+
+//----------- PersistedDiffLimits ----------------------------------------------
+
+/// Limits placed on persisted diffs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PersistedDiffLimits {
+    /// The maximum number of diffs to hold.
+    pub max_num_diffs: Option<u64>,
+}
+
+impl PersistedDiffLimits {
+    /// Compute the limits to use.
+    ///
+    /// `policy` is the policy currently in use. `latest` is the most recent
+    /// approved signed instance -- the current published instance, if
+    /// available, or the last persisted instance.
+    #[must_use]
+    pub fn compute(policy: &PolicyVersion) -> Self {
+        Self {
+            max_num_diffs: Some(policy.server.outbound.max_diffs as u64),
+        }
+    }
+
+    /// Whether these limits are weaker than others.
+    ///
+    /// Returns `true` iff `self` is guaranteed to retain more diffs than
+    /// `other`.
+    #[must_use]
+    pub fn is_weaker_than(&self, other: &Self) -> bool {
+        self.max_num_diffs
+            .is_none_or(|n| other.max_num_diffs.is_some_and(|m| n >= m))
     }
 }
 
