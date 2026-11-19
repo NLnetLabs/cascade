@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::num::NonZeroU64;
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use camino::Utf8Path;
@@ -21,15 +20,10 @@ use domain::utils::dst::UnsizedCopy;
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
-use crate::persistence::zone::{
-    PersistedDiffFileInfo, PersistedDiffManager, PersistedDiffRecordSource, PersistenceState,
-};
+use crate::persistence::zone::PersistenceState;
 use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
-use crate::zone::instance::{
-    CurrentInstance, LoadedInstanceId, ObsoleteInstance, ObsoleteInstances, ObsoleteLoadedInstance,
-    ObsoleteSignedInstance, PersistedInstance, SignedInstanceId,
-};
+use crate::zone::instance::*;
 use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
 use crate::{
     policy::{
@@ -751,6 +745,9 @@ impl From<NameserverCommsPolicy> for NameserverCommsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct InstancesSpec {
+    /// The upcoming instance (at the time of persistence), if any.
+    pub upcoming: Option<UpcomingInstanceSpec>,
+
     /// The current instance of the zone (at the time of persistence).
     pub current: Option<CurrentInstanceSpec>,
 
@@ -773,6 +770,7 @@ impl InstancesSpec {
     /// Parse from this specification.
     pub fn parse(self) -> Instances {
         let Self {
+            upcoming,
             current,
             obsolete,
             next_loaded_id,
@@ -783,6 +781,7 @@ impl InstancesSpec {
             current: None,
             obsolete: obsolete.parse(),
             persisted: current.map(|p| p.parse()),
+            lost_upcoming: upcoming.map(|p| p.parse()),
             next_loaded_id,
         }
     }
@@ -790,24 +789,67 @@ impl InstancesSpec {
     /// Build into this specification.
     pub fn build(instances: &Instances) -> Self {
         let Instances {
-            upcoming: _,
+            ref upcoming,
             ref current,
             ref obsolete,
-            persisted: _,
+            ref persisted,
+            lost_upcoming: _,
             next_loaded_id,
         } = *instances;
 
         Self {
-            current: current.as_ref().map(CurrentInstanceSpec::build),
+            upcoming: upcoming.as_ref().map(UpcomingInstanceSpec::build),
+            current: current
+                .as_ref()
+                .map(CurrentInstanceSpec::build_current)
+                .or(persisted.as_ref().map(CurrentInstanceSpec::build_persisted)),
             obsolete: ObsoleteInstancesSpec::build(obsolete),
             next_loaded_id,
         }
     }
 }
 
+//----------- UpcomingInstanceSpec ---------------------------------------------
+
+/// An upcoming instance of a zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct UpcomingInstanceSpec {
+    /// The loaded instance.
+    pub loaded: Option<LoadedInstanceSpec>,
+
+    /// The signed instance.
+    pub signed: Option<SignedInstanceSpec>,
+}
+
+impl UpcomingInstanceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> LostUpcomingInstance {
+        let Self { loaded, signed } = self;
+
+        LostUpcomingInstance {
+            loaded: loaded.map(|i| i.parse()),
+            signed: signed.map(|i| i.parse()),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instance: &UpcomingInstance) -> Self {
+        let UpcomingInstance {
+            ref loaded,
+            ref signed,
+        } = *instance;
+
+        Self {
+            loaded: loaded.as_deref().map(LoadedInstanceSpec::build),
+            signed: signed.as_deref().map(SignedInstanceSpec::build),
+        }
+    }
+}
+
 //----------- CurrentInstanceSpec ----------------------------------------------
 
-/// The persisted instance of a zone.
+/// The current instance of a zone (at the time of persistence).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CurrentInstanceSpec {
@@ -837,9 +879,24 @@ impl CurrentInstanceSpec {
         }
     }
 
-    /// Build into this specification.
-    pub fn build(instance: &CurrentInstance) -> Self {
+    /// Build from a [`CurrentInstance`].
+    pub fn build_current(instance: &CurrentInstance) -> Self {
         let CurrentInstance {
+            ref loaded,
+            ref signed,
+            pub_time,
+        } = *instance;
+
+        Self {
+            loaded: LoadedInstanceSpec::build(loaded),
+            signed: SignedInstanceSpec::build(signed),
+            pub_time,
+        }
+    }
+
+    /// Build from a [`PersistedInstance`].
+    pub fn build_persisted(instance: &PersistedInstance) -> Self {
+        let PersistedInstance {
             ref loaded,
             ref signed,
             pub_time,
@@ -855,63 +912,86 @@ impl CurrentInstanceSpec {
 
 //----------- ObsoleteInstancesSpec --------------------------------------------
 
-/// Obselete instances of a zone.
+/// Obsolete instances of a zone.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ObsoleteInstancesSpec {
-    /// The instances, from oldest to newest.
-    pub instances: Vec<ObsoleteInstanceSpec>,
+    /// The instances, from oldest to newest, grouped by loaded instance.
+    pub per_load: Vec<ObsoleteInstancesPerLoadSpec>,
+
+    /// Signed instances paired with the current/persisted loaded instance.
+    pub latest_signed: Vec<ObsoleteSignedInstanceSpec>,
 }
 
 impl ObsoleteInstancesSpec {
     /// Parse from this specification.
     pub fn parse(self) -> ObsoleteInstances {
-        let Self { instances } = self;
+        let Self {
+            per_load,
+            latest_signed,
+        } = self;
 
         ObsoleteInstances {
-            instances: instances.into_iter().map(|i| i.parse()).collect(),
+            per_load: per_load.into_iter().map(|i| i.parse()).collect(),
+            latest_signed: latest_signed.into_iter().map(|i| i.parse()).collect(),
         }
     }
 
     /// Build into this specification.
     pub fn build(instances: &ObsoleteInstances) -> Self {
-        let ObsoleteInstances { ref instances } = *instances;
+        let ObsoleteInstances {
+            ref per_load,
+            ref latest_signed,
+        } = *instances;
 
         Self {
-            instances: instances.iter().map(ObsoleteInstanceSpec::build).collect(),
+            per_load: per_load
+                .iter()
+                .map(ObsoleteInstancesPerLoadSpec::build)
+                .collect(),
+            latest_signed: latest_signed
+                .iter()
+                .map(ObsoleteSignedInstanceSpec::build)
+                .collect(),
         }
     }
 }
 
-/// An obsolete instance.
+/// Obsolete instances per loaded instance.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum ObsoleteInstanceSpec {
-    /// An obsolete loaded instance.
-    Loaded(ObsoleteLoadedInstanceSpec),
+pub struct ObsoleteInstancesPerLoadSpec {
+    /// The loaded instance.
+    pub loaded: ObsoleteLoadedInstanceSpec,
 
-    /// An obsolete signed instance.
-    Signed(ObsoleteSignedInstanceSpec),
+    /// The signed instances, from oldest to newest.
+    pub signed: Vec<ObsoleteSignedInstanceSpec>,
 }
 
-impl ObsoleteInstanceSpec {
+impl ObsoleteInstancesPerLoadSpec {
     /// Parse from this specification.
-    pub fn parse(self) -> ObsoleteInstance {
-        match self {
-            Self::Loaded(spec) => ObsoleteInstance::Loaded(spec.parse()),
-            Self::Signed(spec) => ObsoleteInstance::Signed(spec.parse()),
+    pub fn parse(self) -> ObsoleteInstancesPerLoad {
+        let Self { loaded, signed } = self;
+
+        ObsoleteInstancesPerLoad {
+            loaded: loaded.parse(),
+            signed: signed.into_iter().map(|i| i.parse()).collect(),
         }
     }
 
     /// Build into this specification.
-    pub fn build(instance: &ObsoleteInstance) -> Self {
-        match instance {
-            ObsoleteInstance::Loaded(instance) => {
-                Self::Loaded(ObsoleteLoadedInstanceSpec::build(instance))
-            }
-            ObsoleteInstance::Signed(instance) => {
-                Self::Signed(ObsoleteSignedInstanceSpec::build(instance))
-            }
+    pub fn build(instances: &ObsoleteInstancesPerLoad) -> Self {
+        let ObsoleteInstancesPerLoad {
+            ref loaded,
+            ref signed,
+        } = *instances;
+
+        Self {
+            loaded: ObsoleteLoadedInstanceSpec::build(loaded),
+            signed: signed
+                .iter()
+                .map(ObsoleteSignedInstanceSpec::build)
+                .collect(),
         }
     }
 }
@@ -933,13 +1013,16 @@ impl ObsoleteLoadedInstanceSpec {
 
         ObsoleteLoadedInstance {
             inner: inner.parse(),
-            diff: None,
+            diff_into_next: None,
         }
     }
 
     /// Build into this specification.
     pub fn build(instance: &ObsoleteLoadedInstance) -> Self {
-        let ObsoleteLoadedInstance { ref inner, diff: _ } = *instance;
+        let ObsoleteLoadedInstance {
+            ref inner,
+            diff_into_next: _,
+        } = *instance;
 
         Self {
             inner: LoadedInstanceSpec::build(inner),
@@ -964,13 +1047,16 @@ impl ObsoleteSignedInstanceSpec {
 
         ObsoleteSignedInstance {
             inner: inner.parse(),
-            diff: None,
+            diff_into_next: None,
         }
     }
 
     /// Build into this specification.
     pub fn build(instance: &ObsoleteSignedInstance) -> Self {
-        let ObsoleteSignedInstance { ref inner, diff: _ } = *instance;
+        let ObsoleteSignedInstance {
+            ref inner,
+            diff_into_next: _,
+        } = *instance;
 
         Self {
             inner: SignedInstanceSpec::build(inner),
@@ -1231,32 +1317,16 @@ impl ZoneLoadSourceSpec {
 pub struct PersistenceSpec {
     /// The ID of an instance whose snapshot has been persisted to disk.
     pub snapshot_id: Option<SignedInstanceIdSpec>,
-
-    /// Locations of persisted unsigned zone diffs to enable IXFR from
-    /// the upstream to resume on restart, and to enable a complete latest
-    /// unsigned version of the zone to be reconstituted.
-    pub loaded_diffs: PersistedDiffsSpec,
-
-    /// Locations of persisted signed zone diffs to ensure IXFR out toward
-    /// downstreams is still possible after restart, and to enable a complete
-    /// latest signed version of the zone to be reconsituted.
-    pub signed_diffs: PersistedDiffsSpec,
 }
 
 impl PersistenceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> PersistenceState {
-        let Self {
-            snapshot_id,
-            loaded_diffs,
-            signed_diffs,
-        } = self;
+        let Self { snapshot_id } = self;
 
         PersistenceState {
             ongoing: Default::default(),
             snapshot_id: snapshot_id.map(|id| id.parse()),
-            loaded_diffs: loaded_diffs.parse(),
-            signed_diffs: signed_diffs.parse(),
         }
     }
 
@@ -1265,111 +1335,10 @@ impl PersistenceSpec {
         let PersistenceState {
             ongoing: _,
             snapshot_id: persisted_snapshot_id,
-            ref loaded_diffs,
-            ref signed_diffs,
         } = *state;
 
         Self {
             snapshot_id: persisted_snapshot_id.map(SignedInstanceIdSpec::build),
-            loaded_diffs: PersistedDiffsSpec::build_loaded(loaded_diffs),
-            signed_diffs: PersistedDiffsSpec::build_signed(signed_diffs),
-        }
-    }
-}
-
-//------------ PersistedDiffsSpec --------------------------------------------
-
-/// Information about a collection of persisted diffs.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PersistedDiffsSpec {
-    pub is_signed: bool,
-    pub next_idx: usize,
-    pub restore_base_idx: usize,
-    pub diff_infos: Vec<PersistedDiffFileInfoSpec>,
-}
-
-impl PersistedDiffsSpec {
-    /// Parse from this specification.
-    pub fn parse(self) -> PersistedDiffManager {
-        let diff_infos = self
-            .diff_infos
-            .into_iter()
-            .map(PersistedDiffFileInfoSpec::parse)
-            .collect();
-        let is_signed = match self.is_signed {
-            true => PersistedDiffRecordSource::Signed,
-            false => PersistedDiffRecordSource::Loaded,
-        };
-        PersistedDiffManager::for_existing_diffs(
-            is_signed,
-            self.next_idx,
-            self.restore_base_idx,
-            diff_infos,
-        )
-    }
-
-    /// Build into this specification.
-    fn build_loaded(loaded_diffs: &PersistedDiffManager) -> Self {
-        Self {
-            is_signed: false,
-            next_idx: loaded_diffs.next_idx(),
-            restore_base_idx: loaded_diffs.first_diff_to_apply_on_restore(),
-            diff_infos: loaded_diffs
-                .diffs()
-                .iter()
-                .map(PersistedDiffFileInfoSpec::build)
-                .collect(),
-        }
-    }
-
-    /// Build into this specification.
-    fn build_signed(signed_diffs: &PersistedDiffManager) -> Self {
-        Self {
-            is_signed: true,
-            next_idx: signed_diffs.next_idx(),
-            restore_base_idx: signed_diffs.first_diff_to_apply_on_restore(),
-            diff_infos: signed_diffs
-                .diffs()
-                .iter()
-                .map(PersistedDiffFileInfoSpec::build)
-                .collect(),
-        }
-    }
-}
-
-/// Information a single persisted diff.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PersistedDiffFileInfoSpec {
-    id: usize,
-    path: PathBuf,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    loaded_serial: Option<Serial>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    signed_serial: Option<Serial>,
-}
-
-impl PersistedDiffFileInfoSpec {
-    /// Parse from this specification.
-    fn parse(self) -> PersistedDiffFileInfo {
-        PersistedDiffFileInfo::new(
-            self.id,
-            self.path,
-            self.loaded_serial
-                .map(|s| domain::new::base::SoaSerial::from(s.0)),
-            self.signed_serial
-                .map(|s| domain::new::base::SoaSerial::from(s.0)),
-        )
-    }
-
-    /// Build into this specification.
-    fn build(info: &PersistedDiffFileInfo) -> Self {
-        Self {
-            id: info.id(),
-            path: info.path().to_path_buf(),
-            loaded_serial: info.loaded_serial().map(|s| Serial(s.into())),
-            signed_serial: info.signed_serial().map(|s| Serial(s.into())),
         }
     }
 }

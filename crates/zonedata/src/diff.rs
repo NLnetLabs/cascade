@@ -69,6 +69,14 @@ impl DiffData {
             && self.added_records.is_empty()
     }
 
+    /// The total number of records in this diff.
+    pub const fn num_records(&self) -> u64 {
+        self.removed_soa.is_some() as u64
+            + self.added_soa.is_some() as u64
+            + self.removed_records.len() as u64
+            + self.added_records.len() as u64
+    }
+
     /// Iterate over the removed non-SOA records.
     pub fn removed_non_soa<'a>(&'a self, origin: &'a RevName) -> RecordsIter<'a> {
         RecordsIter {
@@ -103,6 +111,20 @@ impl DiffData {
             pending_soa_filter: self.added_soa.is_some(),
             origin,
         }
+    }
+
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        if let Some(soa) = &self.removed_soa {
+            assert!(self.removed_records.contains(&soa.clone().into()));
+        }
+        if let Some(soa) = &self.added_soa {
+            assert!(self.added_records.contains(&soa.clone().into()));
+        }
+        assert!(self.removed_records.is_sorted());
+        assert!(self.added_records.is_sorted());
+
+        // TODO: Check that the zone apex name is consistent.
     }
 }
 

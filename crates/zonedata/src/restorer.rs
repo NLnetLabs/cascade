@@ -143,20 +143,19 @@ impl ZoneRestorer {
         // SAFETY: As per the caller, 'loaded[loaded_index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to
         // access mutably.
-        let mut curr = unsafe { &mut *self.data.loaded[self.loaded_index as usize].get() };
+        let curr = unsafe { &mut *self.data.loaded[self.loaded_index as usize].get() };
 
         // SAFETY: As per the caller, 'loaded[!loaded_index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to
         // access mutably.
-        let mut next = unsafe { &mut *self.data.loaded[!self.loaded_index as usize].get() };
+        let next = unsafe { &mut *self.data.loaded[!self.loaded_index as usize].get() };
 
         // If nothing was previously built, stop.
         curr.soa.as_ref()?;
 
         // If something new has already been built, switch to it.
         if next.soa.is_some() {
-            std::mem::swap(&mut curr, &mut next);
-            self.loaded_index = !self.loaded_index;
+            std::mem::swap(curr, next);
             next.soa = None;
             next.records.clear();
         }
@@ -283,20 +282,19 @@ impl ZoneRestorer {
         // SAFETY: As per the caller, 'signed[signed_index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to
         // access mutably.
-        let mut curr_signed = unsafe { &mut *self.data.signed[self.signed_index as usize].get() };
+        let curr_signed = unsafe { &mut *self.data.signed[self.signed_index as usize].get() };
 
         // SAFETY: As per the caller, 'signed[!loaded_index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to
         // access mutably.
-        let mut next_signed = unsafe { &mut *self.data.signed[!self.signed_index as usize].get() };
+        let next_signed = unsafe { &mut *self.data.signed[!self.signed_index as usize].get() };
 
         // If nothing was previously built, stop.
         curr_signed.soa.as_ref()?;
 
         // If something new has already been built, switch to it.
         if next_signed.soa.is_some() {
-            std::mem::swap(&mut curr_signed, &mut next_signed);
-            self.signed_index = !self.signed_index;
+            std::mem::swap(curr_signed, next_signed);
             next_signed.soa = None;
             next_signed.records.clear();
         }

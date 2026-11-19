@@ -349,3 +349,7 @@ dnst = "*"
 
 [package.metadata.generate-rpm.recommends]
 cascade-hsm-bridge = "*"
+
+
+[lints.rust]
+dead_code_pub_in_binary = "warn"
