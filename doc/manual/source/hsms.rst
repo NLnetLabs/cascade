@@ -69,7 +69,7 @@ to stress or performance test the interface. The tested HSMs are\:
 
    `Amazon Cloud HSM`_, Cloud, PCKS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-20-aws-cloud-hsm/test.log>`_,
    `CardContact SmartCard-HSM`_, Smart Card, , :doc:`view <smartcard-hsm>`
-   `Fortanix DSM`_, Cloud, PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-fortanixdsm-pkcs11/test.log>`_ KMIP `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-fortanixdsm/test.log`_, 
+   `Fortanix DSM`_, Cloud, PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-fortanixdsm-pkcs11/test.log>`_ KMIP `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-fortanixdsm/test.log>`_, 
    `Latchset Kryoptic`_ v1.5, Software, PKCS#11 `🟩 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-kryoptic/test.log>`_,
    `Nitrokey NetHSM`_, "Server, Docker image", PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-nethsm/test.log>`_, :doc:`view <nethsm>`
    `OpenKMIP PyKMIP`_ v0.1.0, Software, KMIP `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-pykmip/test.log>`_,
