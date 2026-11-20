@@ -21,9 +21,9 @@ HSM Interfaces
 ~~~~~~~~~~~~~~
 
 In most cases, you interact with an HSM via an interface that is compliant
-with the Oasis PKCS#11 (Public-Key Cryptography Standard) specification. Some
-HSMs also or alternatively support a newer Oasis specification called KMIP
-(Key Management Interoperability Protocol).
+with the `Oasis PKCS#11`_ (Public-Key Cryptography Standard) specification.
+Some HSMs also or alternatively support a newer Oasis specification called
+`KMIP`_ (Key Management Interoperability Protocol).
 
 KMIP is a data (de)serialization protocol that operates on top of the widely
 used TCP and TLS combination of protocols. As such, it requires no additional
@@ -34,6 +34,9 @@ This is quite different to PKCS#11, which requires the HSM vendor to provide
 a library of code that offers a C language style interface to be used by the
 client at runtime by loading the library (a.k.a. module) into its own process
 with no knowledge of or control over what that code is going to do.
+
+.. _Oasis PKCS#11: https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=pkcs11
+.. _KMIP: https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=kmip
 
 Cascade and HSMs
 ----------------
@@ -59,27 +62,48 @@ In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
 To work with an HSM using its PKCS#11 interface, Cascade requires our
 :program:`cascade-hsm-bridge`.
 
-Several HSMs have been tested with Cascade by the community. Testing was limited to normal
-usage only, not attempting to deliberately cause problems, and not attempting
-to stress or performance test the interface. The tested HSMs are\:
+Several HSMs have been tested with Cascade.
+
+.. note:: Testing was limited to normal usage only. When tested by the Cascade
+   team compatibility level markers (🟥🟧🟩) link to the related test report.
+   NLnet Labs cannot attest to the compatibility of HSMs tested by the
+   community and so compatibility markers are not shown for such HSMs.
+
+The tested HSMs are\:
 
 .. csv-table:: Supported HSMs
-   :header: Vendor, Model, Type, Interface, Guide
+   :header: Model, Type, Compatibility, Guide
    :widths: auto
 
-   CardContact, SmartCard-HSM, "Smart Card", PKCS#11, :doc:`view <smartcard-hsm>`
-   Fortanix, DSM, Cloud, KMIP,
-   Nitrokey, NetHSM, "Server, Docker image", PKCS#11, :doc:`view <nethsm>`
-   Thales, "Cloud HSM", Cloud, PKCS#11, :doc:`view <thales>`
-   Securosys, "Primus HSM, CloudHSM", "Server, Cloud", "KMIP, PKCS#11", `view <https://docs.securosys.com/cascade/overview>`_
-   SoftHSM, "SoftHSM v2.6.1", Software, PKCS#11, :doc:`view <softhsm>`
-   Yubico, "YubiHSM 2", "USB key", PKCS#11,
+   `Amazon Cloud HSM`_, Cloud, PCKS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-20-aws-cloud-hsm/test.log>`_,
+   `CardContact SmartCard-HSM`_, Smart Card, , :doc:`view <smartcard-hsm>`
+   `Fortanix DSM`_, Cloud, PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-fortanixdsm-pkcs11/test.log>`_ KMIP `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-fortanixdsm/test.log>`_, 
+   `Latchset Kryoptic`_ v1.5, Software, PKCS#11 `🟩 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-kryoptic/test.log>`_,
+   `Nitrokey NetHSM`_, "Server, Docker", PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-nethsm/test.log>`_, :doc:`view <nethsm>`
+   `OpenKMIP PyKMIP`_ v0.1.0, Software, KMIP `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-pykmip/test.log>`_,
+   `Thales Luna Cloud HSM`_, Cloud, PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-thales-dpod-luna-cloud-hsm/test.log>`_, :doc:`view <thales>`
+   `Securosys Cloud HSM`_, Cloud, PKCS#11 `🟩 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-securosys-pkcs11/test.log>`_ KMIP `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-securosys/test.log>`_ , `view <https://docs.securosys.com/cascade/overview>`_
+   `Securosys Primus HSM`_, Server, , `view <https://docs.securosys.com/cascade/overview>`_
+   `SoftHSM`_ v2.6.1, Software, PKCS#11 `🟩 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-softhsm2/test.log>`_, :doc:`view <softhsm>`
+   `Yubico YubiHSM 2`_, USB Key, PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-yubihsm2/test.log>`_,
 
-.. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
-   though KMIP 1.2 requires servers to offer support for old versions of the
-   TLS protocol with known security vulnerabilities. For this reason, PyKMIP
-   is **NOT** supported by Cascade as it only supports older vulnerable TLS
-   versions.
+Key:
+
+- 🟩 supports all DNSSEC algorithms supported by Cascade
+- 🟧 lacks support for some DNSSEC algorithms supported by Cascade
+- 🟥 not usable with Cascade
+
+.. _Amazon Cloud HSM: https://aws.amazon.com/cloudhsm/
+.. _CardContact SmartCard-HSM: https://www.smartcard-hsm.com/
+.. _Fortanix DSM: https://www.fortanix.com/platform/data-security-manager
+.. _Latchset Kryoptic: https://github.com/latchset/kryoptic
+.. _Nitrokey NetHSM: https://www.nitrokey.com/products/nethsm
+.. _OpenKMIP PyKMIP: https://github.com/OpenKMIP/PyKMIP
+.. _Thales Luna Cloud HSM: https://cpl.thalesgroup.com/encryption/data-protection-on-demand/services/luna-cloud-hsm
+.. _Securosys Cloud HSM: https://www.securosys.com/cloud-security/cloudhsm-overview
+.. _Securosys Primus HSM: https://www.securosys.com/en/hsm/hsm-overview
+.. _SoftHSM: https://www.softhsm.org/
+.. _Yubico YubiHSM 2: https://www.yubico.com/products/hardware-security-module/
 
 Known quirks
 ~~~~~~~~~~~~
