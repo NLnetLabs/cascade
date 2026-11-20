@@ -62,12 +62,17 @@ In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
 To work with an HSM using its PKCS#11 interface, Cascade requires our
 :program:`cascade-hsm-bridge`.
 
-Several HSMs have been tested with Cascade by the community. Testing was limited to normal
-usage only, not attempting to deliberately cause problems, and not attempting
-to stress or performance test the interface. The tested HSMs are\:
+Several HSMs have been tested with Cascade.
+
+.. note:: Testing was limited to normal usage only. When tested by the Cascade
+   team compatibility level markers (🟥🟧🟩) link to the related test report.
+   NLnet Labs cannot attest to the compatibility of HSMs tested by the
+   community and so compatibility markers are not shown for such HSMs.
+
+The tested HSMs are\:
 
 .. csv-table:: Supported HSMs
-   :header: Model, Type, Status, Guide
+   :header: Model, Type, Compatibility, Guide
    :widths: auto
 
    `Amazon Cloud HSM`_, Cloud, PCKS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-20-aws-cloud-hsm/test.log>`_,
