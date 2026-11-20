@@ -85,7 +85,7 @@ The tested HSMs are\:
    `Securosys Cloud HSM`_, Cloud, PKCS#11 `🟩 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-securosys-pkcs11/test.log>`_ KMIP `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-securosys/test.log>`_ , `view <https://docs.securosys.com/cascade/overview>`_
    `Securosys Primus HSM`_, Server, , `view <https://docs.securosys.com/cascade/overview>`_
    `SoftHSM`_ v2.6.1, Software, PKCS#11 `🟩 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-softhsm2/test.log>`_, :doc:`view <softhsm>`
-   `Yubico YubiHSM 2`_, USB key, PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-yubihsm2/test.log>`_,
+   `Yubico YubiHSM 2`_, USB Key, PKCS#11 `🟧 <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-yubihsm2/test.log>`_,
 
 Key:
 
