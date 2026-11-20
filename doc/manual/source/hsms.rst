@@ -21,9 +21,9 @@ HSM Interfaces
 ~~~~~~~~~~~~~~
 
 In most cases, you interact with an HSM via an interface that is compliant
-with the Oasis PKCS#11 (Public-Key Cryptography Standard) specification. Some
-HSMs also or alternatively support a newer Oasis specification called KMIP
-(Key Management Interoperability Protocol).
+with the `Oasis PKCS#11`_ (Public-Key Cryptography Standard) specification.
+Some HSMs also or alternatively support a newer Oasis specification called
+`KMIP`_ (Key Management Interoperability Protocol).
 
 KMIP is a data (de)serialization protocol that operates on top of the widely
 used TCP and TLS combination of protocols. As such, it requires no additional
@@ -34,6 +34,9 @@ This is quite different to PKCS#11, which requires the HSM vendor to provide
 a library of code that offers a C language style interface to be used by the
 client at runtime by loading the library (a.k.a. module) into its own process
 with no knowledge of or control over what that code is going to do.
+
+.. _Oasis PKCS#11: https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=pkcs11
+.. _KMIP: https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=kmip
 
 Cascade and HSMs
 ----------------
