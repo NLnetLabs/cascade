@@ -75,7 +75,7 @@ Several HSMs have been tested with Cascade.
           HSMs tested by the community.
 
 .. csv-table:: Tested HSMs
-   :header: HSM, Type, Support for Recommended Algorithms, Guide
+   :header: HSM, Type, Supports Recommended DNSSEC Algorithms, Guide
    :widths: auto
 
    `Amazon Cloud HSM`_, Cloud, Partial (no ED25519),  
