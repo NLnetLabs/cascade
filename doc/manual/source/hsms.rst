@@ -84,7 +84,7 @@ Several HSMs have been tested with Cascade.
    `OpenKMIP PyKMIP`_ v0.1.0, Software, No, No,
    `Thales Luna Cloud HSM`_, Cloud, Yes, Yes, :doc:`view <thales>`
    `Securosys Cloud HSM`_, Cloud, Yes, Yes, `view <https://docs.securosys.com/cascade/overview>`_
-   `Securosys Primus HSM`_, Server, , , `view <https://docs.securosys.com/cascade/overview>`_, 
+   `Securosys Primus HSM`_, Server, , , `view <https://docs.securosys.com/cascade/overview>`_
    `SoftHSM`_ v2.6.1, Software, Yes, Yes, :doc:`view <softhsm>`
    `Yubico YubiHSM 2`_, USB Key, Yes, No,
 
