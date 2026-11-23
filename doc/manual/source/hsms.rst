@@ -68,26 +68,25 @@ Tested HSMs
 Several HSMs have been tested with Cascade.
 
 .. note:: Testing was limited to normal usage only. When tested by the Cascade
-          team support for :RFC:`9904#section-3` _"RECOMMENDED"_ algorithms
-          ECDSAP256SHA256 and ED25519 is called out explicitly and a link
-          is provided to the test report. NLnet Labs cannot attest to the
-          compatibility of HSMs tested by the community.
+          team, support for :RFC:`9904#section-3` *"RECOMMENDED"* algorithms
+          ECDSAP256SHA256 and ED25519 is called out explicitly. NLnet Labs
+          cannot attest to the compatibility of HSMs tested by the community.
 
 .. csv-table:: Supported HSMs
-   :header: Model, Type, ECDSAP256SHA256, ED25519, Guide, Test Report
+   :header: Model, Type, ECDSAP256SHA256, ED25519, Guide
    :widths: auto
 
-   `Amazon Cloud HSM`_, Cloud, Yes, No, , `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-20-aws-cloud-hsm/test.log>`_
-   `CardContact SmartCard-HSM`_, Smart Card, , , :doc:`view <smartcard-hsm>`, 
-   `Fortanix DSM`_, Cloud, Yes, Yes, , `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-fortanixdsm/test.log>`_
-   `Latchset Kryoptic`_ v1.5, Software, Yes, Yes, , `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-kryoptic/test.log>`_
-   `Nitrokey NetHSM`_, "Server, Docker", Yes, Yes, :doc:`view <nethsm>`, `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-nethsm/test.log>`_
-   `OpenKMIP PyKMIP`_ v0.1.0, Software, No, No, , `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-19-pykmip/test.log>`_
-   `Thales Luna Cloud HSM`_, Cloud, Yes, Yes, :doc:`view <thales>`, `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-thales-dpod-luna-cloud-hsm/test.log>`_
-   `Securosys Cloud HSM`_, Cloud, Yes, Yes, `view <https://docs.securosys.com/cascade/overview>`_, `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-securosys-pkcs11/test.log>`_
+   `Amazon Cloud HSM`_, Cloud, Yes, No,
+   `CardContact SmartCard-HSM`_, Smart Card, , , :doc:`view <smartcard-hsm>`
+   `Fortanix DSM`_, Cloud, Yes, Yes,
+   `Latchset Kryoptic`_ v1.5, Software, Yes, Yes,
+   `Nitrokey NetHSM`_, "Server, Docker", Yes, Yes, :doc:`view <nethsm>`
+   `OpenKMIP PyKMIP`_ v0.1.0, Software, No, No,
+   `Thales Luna Cloud HSM`_, Cloud, Yes, Yes, :doc:`view <thales>`
+   `Securosys Cloud HSM`_, Cloud, Yes, Yes, `view <https://docs.securosys.com/cascade/overview>`_
    `Securosys Primus HSM`_, Server, , , `view <https://docs.securosys.com/cascade/overview>`_, 
-   `SoftHSM`_ v2.6.1, Software, Yes, Yes, :doc:`view <softhsm>`, `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-softhsm2/test.log>`_
-   `Yubico YubiHSM 2`_, USB Key, Yes, No, , `view <https://github.com/NLnetLabs/cascade-hsm-bridge/blob/test-against-other-hsms/integration-test-reports/2026-11-18-yubihsm2/test.log>`_
+   `SoftHSM`_ v2.6.1, Software, Yes, Yes, :doc:`view <softhsm>`
+   `Yubico YubiHSM 2`_, USB Key, Yes, No,
 
 .. _Amazon Cloud HSM: https://aws.amazon.com/cloudhsm/
 .. _CardContact SmartCard-HSM: https://www.smartcard-hsm.com/
