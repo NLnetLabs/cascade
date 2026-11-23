@@ -138,6 +138,10 @@ impl ZonePersistenceHandle<'_> {
             warn!("Bug: current instance set but no snapshot ID found");
             return;
         };
+        if snapshot_id == current.signed.id {
+            trace!("Skipping compaction: snapshot is up-to-date");
+            return;
+        }
         let obsolete = self.state.instances.obsolete.clone();
         let Some(policy) = self.state.policy.clone() else {
             trace!("Skipping compaction: missing policy");

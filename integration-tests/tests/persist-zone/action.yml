@@ -243,8 +243,7 @@ runs:
     - name: Delete the persisted zone data that Cascade wrote to disk
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        rm "${CASCADE_DIR}"/zone-state/example.test.loaded.*
-        rm "${CASCADE_DIR}"/zone-state/example.test.signed.*
+        rm -v "${CASCADE_DIR}"/zone-state/example.test.L*-SOA*.*
 
     - name: Start Cascade a 3rd time
       run: |
@@ -515,7 +514,7 @@ runs:
     - name: 6 Start Cascade a 4th time
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+        cascaded --config "${CASCADE_DIR}/config.toml" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"
 
     - name: 6 Wait for Cascade to become healthy a 4th time
       run: |
@@ -779,7 +778,7 @@ runs:
     - name: 9 Delete the persisted signed zone data that Cascade wrote to disk
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        rm "${CASCADE_DIR}"/zone-state/example.test.signed.*
+        rm -v "${CASCADE_DIR}"/zone-state/example.test.L*-S*-SOA*.*
 
     - name: 9 Start Cascade again
       run: |

@@ -77,6 +77,7 @@ mod compat {
     use domain::base::iana::ExtendedErrorCode;
     use domain::base::opt::ExtendedError;
     use domain::new::base::RType;
+    use domain::new::base::name::RevName;
     use domain::{
         base::{Message, MessageBuilder, iana::Rcode},
         net::server::{
@@ -465,32 +466,31 @@ mod compat {
             // just collect the whole diff into a single new `Vec`. Each diff
             // should be relatively small so this shouldn't consume too much
             // memory at once.
-            fn format_ixfr(diff: Arc<DiffData>) -> Vec<RegularRecord> {
-                let removed_soa = diff.removed_soa.as_ref().unwrap();
-                let added_soa = diff.added_soa.as_ref().unwrap();
+            fn format_ixfr(diff: DiffData, origin: &RevName) -> Vec<RegularRecord> {
+                let removed_soa = diff.removed_soa.unwrap();
+                let added_soa = diff.added_soa.unwrap();
 
                 let removed_records = diff
                     .removed_records
-                    .iter()
-                    .filter(|r| r.rtype != RType::SOA || r.rname != removed_soa.rname)
-                    .cloned();
+                    .into_iter()
+                    .filter(|r| r.rtype != RType::SOA || *r.rname != *origin);
                 let added_records = diff
                     .added_records
-                    .iter()
-                    .filter(|r| r.rtype != RType::SOA || r.rname != added_soa.rname)
-                    .cloned();
+                    .into_iter()
+                    .filter(|r| r.rtype != RType::SOA || *r.rname != *origin);
 
-                std::iter::once(removed_soa.clone().into())
+                std::iter::once(removed_soa.into())
                     .chain(removed_records)
-                    .chain([added_soa.clone().into()])
+                    .chain(std::iter::once(added_soa.into()))
                     .chain(added_records)
                     .collect()
             }
 
+            let origin = &viewer.soa().rname;
             let soa = viewer.soa().clone();
             let mut records = [soa.clone().into()]
                 .into_iter()
-                .chain(diffs.into_iter().rev().flat_map(format_ixfr))
+                .chain(diffs.into_iter().rev().flat_map(|d| format_ixfr(d, origin)))
                 .chain([soa.into()])
                 .peekable();
 
@@ -589,7 +589,10 @@ trait Viewer {
     ) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d, Self>;
 
     /// Diffs for serving IXFRs, from newest to oldest.
-    fn diffs<'d>(&'d self, instances: &'d Instances) -> impl Iterator<Item = &'d Arc<DiffData>>;
+    fn diffs<'d>(
+        &'d self,
+        instances: &'d Instances,
+    ) -> impl Iterator<Item = DiffData> + use<'d, Self>;
 }
 
 impl Viewer for LoadedZoneReviewer {
@@ -610,11 +613,10 @@ impl Viewer for LoadedZoneReviewer {
             .filter(|&r| r.rname != soa.rname || r.rtype != soa.rtype)
     }
 
-    fn diffs<'d>(&'d self, instances: &'d Instances) -> impl Iterator<Item = &'d Arc<DiffData>> {
+    fn diffs<'d>(&'d self, instances: &'d Instances) -> impl Iterator<Item = DiffData> + use<'d> {
         // TODO: Ensure that the new loaded diff is always correctly available.
 
-        [self.loaded_diff()]
-            .into_iter()
+        std::iter::once(self.loaded_diff())
             .chain(
                 instances
                     .obsolete
@@ -624,7 +626,7 @@ impl Viewer for LoadedZoneReviewer {
                     .map(|is| is.loaded.diff_into_next.as_ref()),
             )
             .take_while(|d| d.is_some())
-            .map(|d| d.unwrap())
+            .map(|d| (**d.unwrap()).clone())
     }
 }
 
@@ -647,10 +649,14 @@ impl Viewer for SignedZoneReviewer {
             .chain(reader.loaded_records())
     }
 
-    fn diffs<'d>(&'d self, instances: &'d Instances) -> impl Iterator<Item = &'d Arc<DiffData>> {
+    fn diffs<'d>(&'d self, instances: &'d Instances) -> impl Iterator<Item = DiffData> + use<'d> {
         // TODO: Ensure that the new signed diff is always correctly available.
 
-        [self.signed_diff(), self.loaded_diff()]
+        build_signed_diffs(
+            [
+                self.signed_diff().map(DiffKind::Signed),
+                self.loaded_diff().map(DiffKind::Loaded),
+            ]
             .into_iter()
             .chain(
                 instances
@@ -658,17 +664,18 @@ impl Viewer for SignedZoneReviewer {
                     .latest_signed
                     .iter()
                     .rev()
-                    .map(|i| i.diff_into_next.as_ref()),
+                    .map(|i| i.diff_into_next.as_ref().map(DiffKind::Signed)),
             )
             .chain(instances.obsolete.per_load.iter().rev().flat_map(|is| {
                 is.signed
                     .iter()
                     .rev()
-                    .map(|i| i.diff_into_next.as_ref())
-                    .chain([is.loaded.diff_into_next.as_ref()])
+                    .map(|i| i.diff_into_next.as_ref().map(DiffKind::Signed))
+                    .chain([is.loaded.diff_into_next.as_ref().map(DiffKind::Loaded)])
             }))
             .take_while(|d| d.is_some())
-            .map(|d| d.unwrap())
+            .map(|d| d.unwrap()),
+        )
     }
 }
 
@@ -691,23 +698,74 @@ impl Viewer for ZoneViewer {
             .chain(reader.loaded_records())
     }
 
-    fn diffs<'d>(&'d self, instances: &'d Instances) -> impl Iterator<Item = &'d Arc<DiffData>> {
-        instances
-            .obsolete
-            .latest_signed
-            .iter()
-            .rev()
-            .map(|i| i.diff_into_next.as_ref())
-            .chain(instances.obsolete.per_load.iter().rev().flat_map(|is| {
-                is.signed
-                    .iter()
-                    .rev()
-                    .map(|i| i.diff_into_next.as_ref())
-                    .chain([is.loaded.diff_into_next.as_ref()])
-            }))
-            .take_while(|d| d.is_some())
-            .map(|d| d.unwrap())
+    fn diffs<'d>(&'d self, instances: &'d Instances) -> impl Iterator<Item = DiffData> + use<'d> {
+        build_signed_diffs(
+            instances
+                .obsolete
+                .latest_signed
+                .iter()
+                .rev()
+                .map(|i| i.diff_into_next.as_ref().map(DiffKind::Signed))
+                .chain(instances.obsolete.per_load.iter().rev().flat_map(|is| {
+                    is.signed
+                        .iter()
+                        .rev()
+                        .map(|i| i.diff_into_next.as_ref().map(DiffKind::Signed))
+                        .chain([is.loaded.diff_into_next.as_ref().map(DiffKind::Loaded)])
+                }))
+                .take_while(|d| d.is_some())
+                .map(|d| d.unwrap()),
+        )
     }
+}
+
+/// A kind of diff (loaded or signed).
+enum DiffKind<'a> {
+    Loaded(&'a Arc<DiffData>),
+    Signed(&'a Arc<DiffData>),
+}
+
+/// Combine loaded and signed diffs to build a sequence of diffs for a signed
+/// zone.
+fn build_signed_diffs<'a>(
+    mut kind_diffs: impl Iterator<Item = DiffKind<'a>>,
+) -> impl Iterator<Item = DiffData> {
+    // The next diff (which is always signed).
+    let mut signed = kind_diffs.next().map(|kind| {
+        if let DiffKind::Signed(signed) = kind {
+            signed
+        } else {
+            panic!("must start with a signed diff")
+        }
+    });
+
+    std::iter::from_fn(move || {
+        // Get the base signed diff.
+        let mut diff: DiffData = (**signed.take()?).clone();
+
+        let origin = &diff.added_soa.as_ref().unwrap().rname;
+
+        // Find succeeding loaded instances and merge them in.
+        for kind in kind_diffs.by_ref() {
+            match kind {
+                DiffKind::Loaded(loaded) => {
+                    // Merge this diff in.
+                    diff.removed_records
+                        .extend(loaded.unsigned_removed_non_soa(origin).cloned());
+                    diff.added_records
+                        .extend(loaded.unsigned_added_non_soa(origin).cloned());
+                }
+
+                DiffKind::Signed(next_signed) => {
+                    // Save this to use in the next iteration.
+                    signed = Some(next_signed);
+                    break;
+                }
+            }
+        }
+
+        Some(diff)
+    })
 }
 
 //----------- ZoneServiceHandle ------------------------------------------------
