@@ -72,7 +72,7 @@ Several HSMs have been tested with Cascade.
           ECDSAP256SHA256 and ED25519 was checked and noted in the table below.
           cannot attest to the compatibility of HSMs tested by the community.
 
-.. csv-table:: Supported HSMs
+.. csv-table:: Tested HSMs
    :header: Model, Type, ECDSAP256SHA256, ED25519, Guide
    :widths: auto
 
