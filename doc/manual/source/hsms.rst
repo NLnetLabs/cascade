@@ -55,12 +55,13 @@ To interact with a HSM over its PKCS#11 interface, Cascade sends KMIP requests
 to :program:`cascade-hsm-bridge`, which executes them against a loaded PKCS#11
 vendor library.
 
-Supported HSMs
---------------
+Compatible HSMs
+---------------
 
-In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
-To work with an HSM using its PKCS#11 interface, Cascade requires our
-:program:`cascade-hsm-bridge`.
+In principle any HSM supporting a compatible interface (PKCS#11 v2.40 or KMIP
+1.2), and that supports cryptographic algorithms used with DNSSEC, should
+be compatible with Cascade. To work with an HSM using its PKCS#11 interface,
+Cascade requires our :program:`cascade-hsm-bridge`.
 
 Tested HSMs
 -----------
