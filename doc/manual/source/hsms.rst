@@ -68,7 +68,7 @@ Tested HSMs
 Several HSMs have been tested with Cascade.
 
 .. note:: Testing was limited to normal usage only. When tested by the Cascade
-          team support for :RFC:`9904@section-3` _"RECOMMENDED"_ algorithms
+          team support for :RFC:`9904#section-3` _"RECOMMENDED"_ algorithms
           ECDSAP256SHA256 and ED25519 is called out explicitly and a link
           is provided to the test report. NLnet Labs cannot attest to the
           compatibility of HSMs tested by the community.
