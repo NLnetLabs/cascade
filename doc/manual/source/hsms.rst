@@ -69,7 +69,7 @@ Several HSMs have been tested with Cascade.
 
 .. note:: Testing was limited to normal usage only. When tested by the Cascade
           team, support for :RFC:`9904#section-3` *"RECOMMENDED"* algorithms
-          ECDSAP256SHA256 and ED25519 is called out explicitly. NLnet Labs
+          ECDSAP256SHA256 and ED25519 was checked and noted in the table below.
           cannot attest to the compatibility of HSMs tested by the community.
 
 .. csv-table:: Supported HSMs
