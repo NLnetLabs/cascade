@@ -69,25 +69,25 @@ Several HSMs have been tested with Cascade.
 
 .. note:: Testing was limited to normal usage only. When tested by the Cascade
           team, support for :RFC:`9904#section-3` *"RECOMMENDED"* algorithms
-          ECDSAP256SHA256 and ED25519 was checked and noted in the table
-          below. The Cascade team cannot attest to the compatibility of HSMs
-          tested by the community.
+          RSA256SHA256, ECDSAP256SHA25 and ED25519 were checked and noted in
+          the table below. The Cascade team cannot attest to the compatibility
+          of HSMs tested by the community.
 
 .. csv-table:: Tested HSMs
-   :header: Model, Type, ECDSAP256SHA256, ED25519, Guide
+   :header: Model, Type, Supports Recommended Algorithms, Guide
    :widths: auto
 
-   `Amazon Cloud HSM`_, Cloud, Yes, No,
-   `CardContact SmartCard-HSM`_, Smart Card, , , :doc:`view <smartcard-hsm>`
-   `Fortanix DSM`_, Cloud, Yes, Yes,
-   `Latchset Kryoptic`_ v1.5, Software, Yes, Yes,
-   `Nitrokey NetHSM`_, "Server, Docker", Yes, Yes, :doc:`view <nethsm>`
-   `OpenKMIP PyKMIP`_ v0.1.0, Software, No, No,
-   `Thales Luna Cloud HSM`_, Cloud, Yes, Yes, :doc:`view <thales>`
-   `Securosys Cloud HSM`_, Cloud, Yes, Yes, `view <https://docs.securosys.com/cascade/overview>`_
-   `Securosys Primus HSM`_, Server, , , `view <https://docs.securosys.com/cascade/overview>`_
-   `SoftHSM`_ v2.6.1, Software, Yes, Yes, :doc:`view <softhsm>`
-   `Yubico YubiHSM 2`_, USB Key, Yes, No,
+   `Amazon Cloud HSM`_, Cloud, Partial (no ED25519),  
+   `CardContact SmartCard-HSM`_, Smart Card, , :doc:`view <smartcard-hsm>`
+   `Fortanix DSM`_, Cloud, Yes,
+   `Latchset Kryoptic`_ v1.5, Software, Yes,
+   `Nitrokey NetHSM`_, "Server, Docker", Yes, :doc:`view <nethsm>`
+   `OpenKMIP PyKMIP`_ v0.1.0, Software, Partial (RSASHA256 only),
+   `Thales Luna Cloud HSM`_, Cloud, Yes, :doc:`view <thales>`
+   `Securosys Cloud HSM`_, Cloud, Yes, `view <https://docs.securosys.com/cascade/overview>`_
+   `Securosys Primus HSM`_, Server, , `view <https://docs.securosys.com/cascade/overview>`_
+   `SoftHSM`_ v2.6.1, Software, Yes, :doc:`view <softhsm>`
+   `Yubico YubiHSM 2`_, USB Key, Partial (no ED25519),
 
 .. _Amazon Cloud HSM: https://aws.amazon.com/cloudhsm/
 .. _CardContact SmartCard-HSM: https://www.smartcard-hsm.com/
