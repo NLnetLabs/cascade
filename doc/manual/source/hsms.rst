@@ -69,9 +69,9 @@ Several HSMs have been tested with Cascade.
 
 .. note:: Testing was limited to normal usage only. When tested by the Cascade
           team, support for :RFC:`9904#section-3` *"RECOMMENDED"* algorithms
-          ECDSAP256SHA256 and ED25519 was checked and noted in the table below.
-          The Cascade team cannot attest to the compatibility of HSMs tested
-		  by the community.
+          ECDSAP256SHA256 and ED25519 was checked and noted in the table
+          below. The Cascade team cannot attest to the compatibility of HSMs
+          tested by the community.
 
 .. csv-table:: Tested HSMs
    :header: Model, Type, ECDSAP256SHA256, ED25519, Guide
