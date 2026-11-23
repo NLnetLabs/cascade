@@ -287,7 +287,6 @@ impl Instances {
             .upcoming
             .take()
             .unwrap_or_else(|| panic!("There is no upcoming instance"));
-        let current = self.current.take();
 
         match upcoming {
             // A re-sign took place.
@@ -299,7 +298,7 @@ impl Instances {
                     loaded,
                     signed: old_signed,
                     pub_time: _,
-                } = current.unwrap_or_else(|| {
+                } = self.current.take().unwrap_or_else(|| {
                     panic!("A re-sign took place but there is no current loaded instance")
                 });
 
@@ -318,6 +317,7 @@ impl Instances {
                     .latest_signed
                     .push_back(ObsoleteSignedInstance {
                         inner: old_signed,
+                        diff_size_into_next: NonZeroU64::new(signed_diff.num_records()),
                         diff_into_next: Some(signed_diff),
                     });
             }
@@ -352,11 +352,13 @@ impl Instances {
                         .latest_signed
                         .push_back(ObsoleteSignedInstance {
                             inner: old_signed,
+                            diff_size_into_next: NonZeroU64::new(signed_diff.num_records()),
                             diff_into_next: Some(signed_diff),
                         });
 
                     let loaded = ObsoleteLoadedInstance {
                         inner: old_loaded,
+                        diff_size_into_next: NonZeroU64::new(loaded_diff.num_records()),
                         diff_into_next: Some(loaded_diff),
                     };
                     let signed = std::mem::take(&mut self.obsolete.latest_signed);
@@ -432,11 +434,13 @@ impl Instances {
         };
         let signed = ObsoleteSignedInstance {
             inner: signed,
+            diff_size_into_next: None,
             diff_into_next: None,
         };
         self.obsolete.latest_signed.push_back(signed);
         let loaded = ObsoleteLoadedInstance {
             inner: loaded,
+            diff_size_into_next: None,
             diff_into_next: None,
         };
         let signed = std::mem::take(&mut self.obsolete.latest_signed);
@@ -860,6 +864,11 @@ pub struct ObsoleteLoadedInstance {
     /// The inner loaded instance.
     pub inner: LoadedInstance,
 
+    /// The number of records in [`Self::diff_into_next`].
+    ///
+    /// If this is [`None`], information about the diff was lost.
+    pub diff_size_into_next: Option<NonZeroU64>,
+
     /// The diff of these contents, if available.
     ///
     /// This diff transforms zone contents _from this instance_ into those of
@@ -880,6 +889,7 @@ impl ObsoleteLoadedInstance {
             diff.check_invariants();
 
             assert_eq!(Some(&self.inner.soa), diff.removed_soa.as_ref());
+            assert_eq!(self.diff_size_into_next.unwrap().get(), diff.num_records());
         }
     }
 }
@@ -902,10 +912,12 @@ impl fmt::Debug for ObsoleteLoadedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             inner,
+            diff_size_into_next,
             diff_into_next,
         } = self;
         f.debug_struct("ObsoleteLoadedInstance")
             .field("inner", inner)
+            .field("diff_size_into_next", diff_size_into_next)
             // Hide the diff.
             .field(
                 "diff_into_next",
@@ -922,6 +934,11 @@ impl fmt::Debug for ObsoleteLoadedInstance {
 pub struct ObsoleteSignedInstance {
     /// The inner signed instance.
     pub inner: SignedInstance,
+
+    /// The number of records in [`Self::diff_into_next`].
+    ///
+    /// If this is [`None`], information about the diff was lost.
+    pub diff_size_into_next: Option<NonZeroU64>,
 
     /// The diff of these contents, if available.
     ///
@@ -943,6 +960,7 @@ impl ObsoleteSignedInstance {
             diff.check_invariants();
 
             assert_eq!(Some(&self.inner.soa), diff.removed_soa.as_ref());
+            assert_eq!(self.diff_size_into_next.unwrap().get(), diff.num_records());
             // TODO: Verify `min_expiration` too?
         }
     }
@@ -966,10 +984,12 @@ impl fmt::Debug for ObsoleteSignedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             inner,
+            diff_size_into_next,
             diff_into_next,
         } = self;
         f.debug_struct("ObsoleteSignedInstance")
             .field("inner", inner)
+            .field("diff_size_into_next", diff_size_into_next)
             // Hide the diff.
             .field(
                 "diff_into_next",

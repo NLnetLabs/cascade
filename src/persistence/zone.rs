@@ -53,6 +53,9 @@ impl ZonePersistenceHandle<'_> {
         // Mark the persisted instance as obsolete.
         self.state.instances.obsolete_persisted();
 
+        // Forget about the old snapshot, if any.
+        self.state.persistence.snapshot_id = None;
+
         // Remove any already enqueued signing operation that is blocked by
         // the ongoing restore as it will otherwise immediately start once the
         // restore completes.

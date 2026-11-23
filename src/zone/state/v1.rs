@@ -1007,15 +1007,22 @@ impl ObsoleteInstancesPerLoadSpec {
 pub struct ObsoleteLoadedInstanceSpec {
     /// The inner loaded instance.
     pub inner: LoadedInstanceSpec,
+
+    /// The size of the diff from this instance to the succeeding one.
+    pub diff_size_into_next: Option<NonZeroU64>,
 }
 
 impl ObsoleteLoadedInstanceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> ObsoleteLoadedInstance {
-        let Self { inner } = self;
+        let Self {
+            inner,
+            diff_size_into_next,
+        } = self;
 
         ObsoleteLoadedInstance {
             inner: inner.parse(),
+            diff_size_into_next,
             diff_into_next: None,
         }
     }
@@ -1024,11 +1031,13 @@ impl ObsoleteLoadedInstanceSpec {
     pub fn build(instance: &ObsoleteLoadedInstance) -> Self {
         let ObsoleteLoadedInstance {
             ref inner,
+            diff_size_into_next,
             diff_into_next: _,
         } = *instance;
 
         Self {
             inner: LoadedInstanceSpec::build(inner),
+            diff_size_into_next,
         }
     }
 }
@@ -1041,15 +1050,22 @@ impl ObsoleteLoadedInstanceSpec {
 pub struct ObsoleteSignedInstanceSpec {
     /// The inner signed instance.
     pub inner: SignedInstanceSpec,
+
+    /// The size of the diff from this instance to the succeeding one.
+    pub diff_size_into_next: Option<NonZeroU64>,
 }
 
 impl ObsoleteSignedInstanceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> ObsoleteSignedInstance {
-        let Self { inner } = self;
+        let Self {
+            inner,
+            diff_size_into_next,
+        } = self;
 
         ObsoleteSignedInstance {
             inner: inner.parse(),
+            diff_size_into_next,
             diff_into_next: None,
         }
     }
@@ -1058,11 +1074,13 @@ impl ObsoleteSignedInstanceSpec {
     pub fn build(instance: &ObsoleteSignedInstance) -> Self {
         let ObsoleteSignedInstance {
             ref inner,
+            diff_size_into_next,
             diff_into_next: _,
         } = *instance;
 
         Self {
             inner: SignedInstanceSpec::build(inner),
+            diff_size_into_next,
         }
     }
 }

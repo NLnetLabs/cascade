@@ -841,11 +841,21 @@ impl InMemoryDiffTrimmer {
     /// If [`Self::exceeded()`] is true after this call, the diff in `instance`
     /// (and the diffs in all following instances) should be trimmed.
     pub fn account_loaded(&mut self, instance: &ObsoleteLoadedInstance) {
-        let Some(diff) = &instance.diff_into_next else {
+        let ObsoleteLoadedInstance {
+            inner: _,
+            diff_size_into_next,
+            // NOTE: This method may be called before the diff is available.
+            diff_into_next: _,
+        } = instance;
+
+        let Some(diff_size_into_next) = diff_size_into_next else {
             return;
         };
-        self.num_diffs += 1;
-        self.num_records += diff.num_records();
+        // NOTE: The diffs of loaded instances do not appear in IXFRs from the
+        // publication server; they are merged into adjacent diffs of signed
+        // instances. So we don't need to count them here.
+        //self.num_diffs += 1;
+        self.num_records += diff_size_into_next.get();
     }
 
     /// Account for the given signed instance.
@@ -853,11 +863,18 @@ impl InMemoryDiffTrimmer {
     /// If [`Self::exceeded()`] is true after this call, the diff in `instance`
     /// (and the diffs in all following instances) should be trimmed.
     pub fn account_signed(&mut self, instance: &ObsoleteSignedInstance) {
-        let Some(diff) = &instance.diff_into_next else {
+        let ObsoleteSignedInstance {
+            inner: _,
+            diff_size_into_next,
+            // NOTE: This method may be called before the diff is available.
+            diff_into_next: _,
+        } = instance;
+
+        let Some(diff_size_into_next) = diff_size_into_next else {
             return;
         };
         self.num_diffs += 1;
-        self.num_records += diff.num_records();
+        self.num_records += diff_size_into_next.get();
     }
 
     /// Whether limits have been exceeded.
