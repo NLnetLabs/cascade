@@ -79,8 +79,7 @@ pub struct Instances {
     /// This is set when Cascade restarts after persisting the zone to disk.
     /// This field stores the zone that _was_ the current/published instance;
     /// it will be moved to [`Self::current`] if/when restoration succeeds. If
-    /// restoration fails, it remains untouched here; thus this field is never
-    /// modified.
+    /// restoration fails, it is moved to [`Self::obsolete`].
     pub persisted: Option<PersistedInstance>,
 
     /// The next usable loaded instance ID.
@@ -177,7 +176,7 @@ impl Instances {
                 soa,
                 num_records,
             },
-            diff: built.diff().clone(),
+            diff_from_prev: built.diff().clone(),
         });
     }
 }
@@ -256,7 +255,7 @@ impl Instances {
                 num_loaded_records,
                 min_expiration,
             },
-            diff: built.diff().clone(),
+            diff_from_prev: built.diff().clone(),
         });
     }
 }
@@ -298,7 +297,7 @@ impl Instances {
 
                 let UpcomingSignedInstance {
                     inner: signed,
-                    diff: signed_diff,
+                    diff_from_prev: signed_diff,
                 } = signed;
 
                 self.current = Some(CurrentInstance {
@@ -307,12 +306,12 @@ impl Instances {
                     pub_time,
                 });
 
-                self.obsolete.instances.push_back(ObsoleteInstance::Signed(
-                    ObsoleteSignedInstance {
+                self.obsolete
+                    .latest_signed
+                    .push_back(ObsoleteSignedInstance {
                         inner: old_signed,
-                        diff: Some(signed_diff),
-                    },
-                ));
+                        diff_into_next: Some(signed_diff),
+                    });
             }
 
             // A new loaded instance has appeared.
@@ -322,11 +321,11 @@ impl Instances {
             } => {
                 let UpcomingLoadedInstance {
                     inner: loaded,
-                    diff: loaded_diff,
+                    diff_from_prev: loaded_diff,
                 } = loaded;
                 let UpcomingSignedInstance {
                     inner: signed,
-                    diff: signed_diff,
+                    diff_from_prev: signed_diff,
                 } = signed;
 
                 let old = self.current.replace(CurrentInstance {
@@ -341,19 +340,22 @@ impl Instances {
                     pub_time: _,
                 }) = old
                 {
-                    // The loaded instance must be added first.
-                    self.obsolete.instances.push_back(ObsoleteInstance::Loaded(
-                        ObsoleteLoadedInstance {
-                            inner: old_loaded,
-                            diff: Some(loaded_diff),
-                        },
-                    ));
-                    self.obsolete.instances.push_back(ObsoleteInstance::Signed(
-                        ObsoleteSignedInstance {
+                    self.obsolete
+                        .latest_signed
+                        .push_back(ObsoleteSignedInstance {
                             inner: old_signed,
-                            diff: Some(signed_diff),
-                        },
-                    ));
+                            diff_into_next: Some(signed_diff),
+                        });
+
+                    let loaded = ObsoleteLoadedInstance {
+                        inner: old_loaded,
+                        diff_into_next: Some(loaded_diff),
+                    };
+                    let signed = std::mem::take(&mut self.obsolete.latest_signed);
+
+                    self.obsolete
+                        .per_load
+                        .push_back(ObsoleteInstancesPerLoad { loaded, signed });
                 }
             }
 
@@ -398,10 +400,81 @@ impl Instances {
 
         let persisted = self
             .persisted
-            .as_ref()
+            .take()
             .unwrap_or_else(|| panic!("There is no persisted instance"));
 
-        self.current = Some(persisted.to_current());
+        self.current = Some(persisted.into_current());
+    }
+
+    /// Mark the persisted instance as obsolete.
+    pub fn obsolete_persisted(&mut self) {
+        let Some(PersistedInstance {
+            loaded,
+            signed,
+            pub_time: _,
+        }) = self.persisted.take()
+        else {
+            // There was no persisted instance.
+            return;
+        };
+        let signed = ObsoleteSignedInstance {
+            inner: signed,
+            diff_into_next: None,
+        };
+        self.obsolete.latest_signed.push_back(signed);
+        let loaded = ObsoleteLoadedInstance {
+            inner: loaded,
+            diff_into_next: None,
+        };
+        let signed = std::mem::take(&mut self.obsolete.latest_signed);
+        self.obsolete
+            .per_load
+            .push_back(ObsoleteInstancesPerLoad { loaded, signed });
+    }
+}
+
+impl Instances {
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        let Self {
+            ref upcoming,
+            ref current,
+            ref obsolete,
+            ref persisted,
+            next_loaded_id,
+        } = *self;
+
+        if let Some(upcoming) = &upcoming {
+            upcoming.check_invariants();
+        }
+        if let Some(current) = &current {
+            current.check_invariants();
+        }
+        self.obsolete.check_invariants();
+        assert!(
+            current.is_none() || persisted.is_none(),
+            "The persisted instance must become current or obsolete"
+        );
+        if let Some(persisted) = &persisted {
+            persisted.check_invariants();
+        }
+
+        // Check that loaded instance IDs grow in order.
+        assert!(
+            obsolete
+                .latest_loaded_id()
+                .into_iter()
+                .chain(persisted.as_ref().map(|p| p.loaded.id))
+                .chain(current.as_ref().map(|c| c.loaded.id))
+                .chain(
+                    upcoming
+                        .as_ref()
+                        .and_then(|u| u.loaded.as_ref())
+                        .map(|i| i.id)
+                )
+                .chain(std::iter::once(LoadedInstanceId(next_loaded_id)))
+                .is_sorted()
+        );
     }
 }
 
@@ -445,6 +518,25 @@ pub struct UpcomingInstance {
     //   (with such a field, policy changes during generation can be ignored.)
 }
 
+impl UpcomingInstance {
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        if let Some(loaded) = &self.loaded {
+            loaded.check_invariants();
+        }
+        if let Some(signed) = &self.signed {
+            signed.check_invariants();
+        }
+        if let Some(loaded) = &self.loaded
+            && let Some(signed) = &self.signed
+        {
+            assert_eq!(loaded.id, signed.id.0);
+            assert!(loaded.next_signed_id > signed.id.1);
+            assert!(loaded.num_records.get() > signed.num_loaded_records);
+        }
+    }
+}
+
 //----------- UpcomingLoadedInstance -------------------------------------------
 
 /// An upcoming loaded instance.
@@ -458,7 +550,19 @@ pub struct UpcomingLoadedInstance {
     /// This diff transforms zone contents _from the current instance_ into
     /// those of _this upcoming instance_. If this instance is accepted, the
     /// diff will be saved as part of the obsoleted instance.
-    pub diff: Arc<DiffData>,
+    pub diff_from_prev: Arc<DiffData>,
+}
+
+impl UpcomingLoadedInstance {
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        self.diff_from_prev.check_invariants();
+
+        assert_eq!(
+            Some(&self.inner.soa),
+            self.diff_from_prev.added_soa.as_ref()
+        );
+    }
 }
 
 impl Deref for UpcomingLoadedInstance {
@@ -477,11 +581,14 @@ impl DerefMut for UpcomingLoadedInstance {
 
 impl fmt::Debug for UpcomingLoadedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { inner, diff: _ } = self;
+        let Self {
+            inner,
+            diff_from_prev: _,
+        } = self;
         f.debug_struct("UpcomingLoadedInstance")
             .field("inner", inner)
             // Hide the diff.
-            .field("diff", &format_args!("..."))
+            .field("diff_from_prev", &format_args!("..."))
             .finish()
     }
 }
@@ -499,7 +606,20 @@ pub struct UpcomingSignedInstance {
     /// This diff transforms zone contents _from the current instance_ into
     /// those of _this upcoming instance_. If this instance is accepted, the
     /// diff will be saved as part of the obsoleted instance.
-    pub diff: Arc<DiffData>,
+    pub diff_from_prev: Arc<DiffData>,
+}
+
+impl UpcomingSignedInstance {
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        self.diff_from_prev.check_invariants();
+
+        assert_eq!(
+            Some(&self.inner.soa),
+            self.diff_from_prev.added_soa.as_ref()
+        );
+        // TODO: Check `min_expiration`?
+    }
 }
 
 impl Deref for UpcomingSignedInstance {
@@ -518,11 +638,14 @@ impl DerefMut for UpcomingSignedInstance {
 
 impl fmt::Debug for UpcomingSignedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { inner, diff: _ } = self;
+        let Self {
+            inner,
+            diff_from_prev: _,
+        } = self;
         f.debug_struct("UpcomingSignedInstance")
             .field("inner", inner)
             // Hide the diff.
-            .field("diff", &format_args!("..."))
+            .field("diff_from_prev", &format_args!("..."))
             .finish()
     }
 }
@@ -567,6 +690,13 @@ impl CurrentInstance {
             pub_time,
         }
     }
+
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        assert_eq!(self.loaded.id, self.signed.id.0);
+        assert!(self.loaded.next_signed_id > self.signed.id.1);
+        assert!(self.loaded.num_records.get() > self.signed.num_loaded_records);
+    }
 }
 
 //----------- ObsoleteInstances ------------------------------------------------
@@ -578,27 +708,76 @@ impl CurrentInstance {
 /// IXFRs.
 #[derive(Clone, Debug, Default)]
 pub struct ObsoleteInstances {
-    /// The instances, from oldest to newest.
-    ///
-    /// This list contains loaded and signed instances. Each loaded instance
-    /// is followed by the (zero or more) signed instances relative to it.
-    /// Thus, signed instances are relative to the _closest preceding_ loaded
-    /// instance, as confirmed by their IDs.
+    /// The instances, from oldest to newest, grouped by loaded instance.
     ///
     /// A [`VecDeque`] is used so that old instances can be removed easily.
-    /// Every signed instance must be preceded by a loaded instance, so care
-    /// must be taken when removing an old loaded instance.
-    pub instances: VecDeque<ObsoleteInstance>,
+    pub per_load: VecDeque<ObsoleteInstancesPerLoad>,
+
+    /// Signed instances paired with the current/persisted loaded instance.
+    ///
+    /// These instances cannot be stored in [`Self::per_load`] because the
+    /// associated loaded instance is not obsolete yet.
+    ///
+    /// A [`VecDeque`] is used so that old instances can be removed easily.
+    pub latest_signed: VecDeque<ObsoleteSignedInstance>,
 }
 
-/// An obsolete instance.
-#[derive(Debug, Clone)]
-pub enum ObsoleteInstance {
-    /// An obsolete loaded instance.
-    Loaded(ObsoleteLoadedInstance),
+impl ObsoleteInstances {
+    /// The latest known loaded instance ID.
+    fn latest_loaded_id(&self) -> Option<LoadedInstanceId> {
+        self.latest_signed
+            .back()
+            .map(|i| i.id.0)
+            .or(self.per_load.back().map(|is| is.loaded.id))
+    }
 
-    /// An obsolete signed instance.
-    Signed(ObsoleteSignedInstance),
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        assert!(
+            self.per_load
+                .iter()
+                .map(|is| is.loaded.id)
+                .chain(self.latest_signed.front().map(|i| i.id.0))
+                .is_sorted()
+        );
+
+        self.per_load
+            .par_iter()
+            .for_each(|is| is.check_invariants());
+
+        if let Some(front) = self.latest_signed.front() {
+            self.latest_signed.par_iter().for_each(|i| {
+                assert_eq!(front.id.0, i.id.0);
+                i.check_invariants();
+            });
+        }
+
+        // TODO: Check that diffs are compatible?
+    }
+}
+
+/// Obsolete instances per loaded instance.
+#[derive(Clone, Debug)]
+pub struct ObsoleteInstancesPerLoad {
+    /// The loaded instance.
+    pub loaded: ObsoleteLoadedInstance,
+
+    /// The signed instances, from oldest to newest.
+    ///
+    /// A [`VecDeque`] is used so that old instances can be removed easily.
+    pub signed: VecDeque<ObsoleteSignedInstance>,
+}
+
+impl ObsoleteInstancesPerLoad {
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        self.loaded.check_invariants();
+        self.signed.par_iter().for_each(|signed| {
+            assert_eq!(self.loaded.id, signed.id.0);
+            assert!(self.loaded.next_signed_id > signed.id.1);
+            assert!(self.loaded.num_records.get() > signed.num_loaded_records);
+        });
+    }
 }
 
 //----------- ObsoleteLoadedInstance -------------------------------------------
@@ -617,7 +796,20 @@ pub struct ObsoleteLoadedInstance {
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
-    pub diff: Option<Arc<DiffData>>,
+    pub diff_into_next: Option<Arc<DiffData>>,
+}
+
+impl ObsoleteLoadedInstance {
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        if let Some(diff) = &self.diff_into_next {
+            assert!(diff.removed_soa.is_some());
+            assert!(diff.added_soa.is_some());
+            diff.check_invariants();
+
+            assert_eq!(Some(&self.inner.soa), diff.removed_soa.as_ref());
+        }
+    }
 }
 
 impl Deref for ObsoleteLoadedInstance {
@@ -636,11 +828,17 @@ impl DerefMut for ObsoleteLoadedInstance {
 
 impl fmt::Debug for ObsoleteLoadedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { inner, diff } = self;
+        let Self {
+            inner,
+            diff_into_next,
+        } = self;
         f.debug_struct("ObsoleteLoadedInstance")
             .field("inner", inner)
             // Hide the diff.
-            .field("diff", &diff.as_ref().map(|_| format_args!("...")))
+            .field(
+                "diff_into_next",
+                &diff_into_next.as_ref().map(|_| format_args!("...")),
+            )
             .finish()
     }
 }
@@ -661,7 +859,21 @@ pub struct ObsoleteSignedInstance {
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
-    pub diff: Option<Arc<DiffData>>,
+    pub diff_into_next: Option<Arc<DiffData>>,
+}
+
+impl ObsoleteSignedInstance {
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        if let Some(diff) = &self.diff_into_next {
+            assert!(diff.removed_soa.is_some());
+            assert!(diff.added_soa.is_some());
+            diff.check_invariants();
+
+            assert_eq!(Some(&self.inner.soa), diff.removed_soa.as_ref());
+            // TODO: Verify `min_expiration` too?
+        }
+    }
 }
 
 impl Deref for ObsoleteSignedInstance {
@@ -680,11 +892,17 @@ impl DerefMut for ObsoleteSignedInstance {
 
 impl fmt::Debug for ObsoleteSignedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { inner, diff } = self;
+        let Self {
+            inner,
+            diff_into_next,
+        } = self;
         f.debug_struct("ObsoleteSignedInstance")
             .field("inner", inner)
             // Hide the diff.
-            .field("diff", &diff.as_ref().map(|_| format_args!("...")))
+            .field(
+                "diff_into_next",
+                &diff_into_next.as_ref().map(|_| format_args!("...")),
+            )
             .finish()
     }
 }
@@ -715,18 +933,25 @@ pub struct PersistedInstance {
 
 impl PersistedInstance {
     /// Build a [`CurrentInstance`] out of `self`.
-    pub fn to_current(&self) -> CurrentInstance {
+    pub fn into_current(self) -> CurrentInstance {
         let Self {
             loaded,
             signed,
             pub_time,
-        } = self.clone();
+        } = self;
 
         CurrentInstance {
             loaded,
             signed,
             pub_time,
         }
+    }
+
+    /// Check invariants.
+    pub fn check_invariants(&self) {
+        assert_eq!(self.loaded.id, self.signed.id.0);
+        assert!(self.loaded.next_signed_id > self.signed.id.1);
+        assert!(self.loaded.num_records.get() > self.signed.num_loaded_records);
     }
 }
 

@@ -291,6 +291,8 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
         .take(&name)
         .expect("the zone was found just above");
 
+    let mut handle = zone.write_handle(center);
+
     // Remove the zone from all the places it might be stored.
     // The zone might not have made it to these places, but that's not an issue
     // so we just ignore any errors.
@@ -308,23 +310,15 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     // retry the zone removal at a later moment. An alternative could be to
     // track 'mid-removal' of a zone so that we can detect an incomplete
     // attempt to remove a zone.
-    zone.write_handle(center).persistence().clear();
+    handle.persistence().clear();
     LoadedReviewServer::remove_zone(center, &zone);
     SignedReviewServer::remove_zone(center, &zone);
     PublicationServer::remove_zone(center, &zone);
 
-    let mut zone_state = zone.state.write_cleanly();
-
-    ZoneHandle {
-        zone: &zone,
-        state: &mut zone_state,
-        center,
-    }
-    .loader()
-    .prep_removal();
+    handle.loader().prep_removal();
 
     // Update the policy's referenced zones.
-    if let Some(policy) = zone_state.policy.take() {
+    if let Some(policy) = handle.state.policy.take() {
         let policy = state
             .policies
             .get_mut(&policy.name)
@@ -338,7 +332,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     if let crate::loader::Source::Server {
         tsig_key: Some(key_name),
         ..
-    } = &zone_state.loader.source
+    } = &handle.state.loader.source
     {
         state
             .tsig_store
@@ -350,9 +344,8 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     }
 
     // Persist the state file one last time.
-    zone_state.record_event(HistoricalEvent::Removed, None);
-    std::mem::drop(zone_state);
-    crate::zone::save_state_now(center, &zone);
+    handle.state.record_event(HistoricalEvent::Removed, None);
+    let _ = handle.get().save_state_now();
 
     // TODO: Remove the zone state file?
 
