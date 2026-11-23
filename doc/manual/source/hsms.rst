@@ -69,12 +69,12 @@ Several HSMs have been tested with Cascade.
 
 .. note:: Testing was limited to normal usage only. When tested by the Cascade
           team, support for :RFC:`9904#section-3` *"RECOMMENDED"* algorithms
-          RSA256SHA256, ECDSAP256SHA25 and ED25519 were checked and noted in
-          the table below. The Cascade team cannot attest to the compatibility
-          of HSMs tested by the community.
+          RSASHA256, ECDSAP256SHA25 and ED25519 were checked and noted in the
+          table below. The Cascade team cannot attest to the compatibility of
+          HSMs tested by the community.
 
 .. csv-table:: Tested HSMs
-   :header: Model, Type, Supports Recommended Algorithms, Guide
+   :header: HSM, Type, Support for Recommended Algorithms, Guide
    :widths: auto
 
    `Amazon Cloud HSM`_, Cloud, Partial (no ED25519),  
