@@ -1,0 +1,32 @@
+# Setup incremental signing to produce predictable outputs so that we can
+# easily compare the generated zone against expected output.
+#
+# Enable sending of NOTIFY messages using TSIG authentication to the NSD
+# secondary.
+version = "v1"
+
+[signer.denial]
+type = "nsec"
+
+[signer]
+serial-policy = "keep"
+signature-inception-offset = 0
+signature-lifetime = 100000000
+
+[key-manager.records]
+dnskey.signature-inception-offset = 0
+cds.signature-inception-offset = 0
+dnskey.signature-lifetime = 100000000
+cds.signature-lifetime = 100000000
+
+[server.outbound]
+# NSD secondary listens on port 1054.
+send-notify-to = ["127.0.0.1:1054^tsig-key"]
+
+# Require that the XFR request from the NSD secondary be signed with the
+# specified TSIG key. Without this, a TSIG signed XFR request with a known
+# key will still be accepted, but an XFR request that is NOT TSIG signed
+# would also be accepted. In the test we verify that TSIG is required by
+# Cascade by attempting a dig without the required TSIG key and showing
+# that it fails.
+accept-xfr-from = ["127.0.0.1^tsig-key"]
