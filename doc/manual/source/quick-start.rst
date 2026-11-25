@@ -12,6 +12,13 @@ the settings relating to daemonization.
    review the :ref:`key-roll automation controls <automation-control>` before
    adding a zone.
 
+.. tip:: For users migrating from `OpenDNSSEC <https://www.opendnssec.org/>`_
+   we offer a tool that can help with inspecting your OpenDNSSEC configuration
+   and generating Cascade and :program:`cascade-hsm-bridge` configuration files,
+   Cascade policies, and guidance on the commands required to import keys and
+   zones into Cascade. Check out `ods2cascade <https://cascade.docs.nlnetlabs.nl/projects/ods2cascade/en/latest/>`_
+   for more information.
+
 .. _cascade-config:
 
 Configuring Cascade
