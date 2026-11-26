@@ -4,16 +4,12 @@
 //! into. It collates all relevant information from the request message and
 //! limits itself to the kinds of requests supported by Cascade.
 
-use domain::{
-    new::{
-        base::{
-            Message, MessageItem, QType, RClass, RType, Record,
-            name::{Name, RevName},
-            wire,
-        },
-        rdata::{RecordData, Soa},
-    },
+use domain::new::base::{
+    Message, MessageItem, QType, RClass, RType, Record,
+    name::{Name, RevName},
+    rdata::{RecordData, Soa},
     utils::dst::UnsizedCopy,
+    wire,
 };
 
 /// Parse a DNS request message into a [`Request`].

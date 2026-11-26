@@ -12,11 +12,9 @@
 
 use std::fmt;
 
-use domain::{
-    new::base::{
-        RType, TTL,
-        name::{NameBuf, RevName, RevNameBuf},
-    },
+use domain::new::base::{
+    RType, TTL,
+    name::{NameBuf, RevName, RevNameBuf},
     utils::dst::UnsizedCopy,
 };
 use rayon::slice::ParallelSliceMut;

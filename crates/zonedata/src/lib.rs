@@ -154,17 +154,16 @@ use std::{
 use domain::new::base::Record;
 use domain::new::base::compat::Ttl;
 use domain::new::base::compat::iana::Class;
+use domain::new::base::utils::dst::UnsizedCopy;
 use domain::{
     base::{ToName, name::FlattenInto},
-    new::{
-        base::{
-            CanonicalRecordData, RType,
-            name::{Name, NameBuf, RevName, RevNameBuf},
-            wire::{BuildBytes, ParseBytes},
-        },
+    new::base::{
+        CanonicalRecordData, RType,
+        name::{Name, NameBuf, RevName, RevNameBuf},
         rdata::{BoxedRecordData, RecordData, Soa},
+        wire::{BuildBytes, ParseBytes},
     },
-    utils::dst::UnsizedCopy,
+    // utils::dst::UnsizedCopy,
 };
 
 pub mod storage;

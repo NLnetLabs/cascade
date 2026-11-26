@@ -8,13 +8,10 @@ use std::{
 };
 
 use cascade_zonedata::{DiffData, RegularRecord, SoaRecord, ZoneRestorer};
-use domain::{
-    new::{
-        base::{RType, Record, SoaSerial, name::RevNameBuf, parse::ParseError, wire::SplitBytes},
-        rdata::RecordData,
-    },
-    utils::dst::UnsizedCopy,
+use domain::new::base::{
+    RType, Record, SoaSerial, name::RevNameBuf, parse::ParseError, wire::SplitBytes,
 };
+use domain_base::{rdata::RecordData, utils::dst::UnsizedCopy};
 use tracing::{info, trace};
 
 use crate::{center::Center, persistence::discard_excess_diffs, zone::Zone};

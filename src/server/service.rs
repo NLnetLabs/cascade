@@ -2,13 +2,11 @@
 
 use std::sync::{Arc, RwLock};
 
-use domain::{
-    new::base::{
-        name::{RevName, RevNameBuf},
-        wire::ParseBytes,
-    },
-    utils::dst::UnsizedCopy,
+use domain::new::base::{
+    name::{RevName, RevNameBuf},
+    wire::ParseBytes,
 };
+use domain_base::utils::dst::UnsizedCopy;
 
 use crate::{
     zone::Zone,
@@ -92,10 +90,7 @@ mod compat {
             message::Request,
             service::{CallResult, Service, ServiceFeedback, ServiceResult},
         },
-        new::{
-            base::{name::Name, wire::ParseBytesZC},
-            rdata::Soa,
-        },
+        new::base::{name::Name, rdata::Soa, wire::ParseBytesZC},
         tsig,
     };
     use futures::Stream;
