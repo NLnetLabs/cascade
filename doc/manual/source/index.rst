@@ -185,6 +185,7 @@ share ideas, and request features. Positive reports are welcome too.
 
    faq
    limitations
+   threat-model
    glossary
 
 .. toctree::
