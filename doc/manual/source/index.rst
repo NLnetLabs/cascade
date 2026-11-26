@@ -160,6 +160,7 @@ Examples of things we're interested in:
 
    faq
    limitations
+   threat-model
    glossary
 
 .. toctree::
