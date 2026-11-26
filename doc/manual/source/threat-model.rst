@@ -80,7 +80,7 @@ Cascade guarantees the following:
 - Cacade's output is a correct 'signed zone' (See Section 10 in RFC 9499) TODO: get wording from def.
 - Cascade's per-zone pipelines are independent while load is under signing capacity
 - Cascade does not crash
-- Pubishes refreshed signatures early enough for propagation into caches.
+- Cascade publishes refreshed signatures early enough for propagation into caches.
 
 .. rubric:: Footnotes
 
