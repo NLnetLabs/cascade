@@ -32,6 +32,7 @@ use domain::new::base::parse::{ParseBytes, ParseBytesZC};
 use domain::new::base::rdata::{
     Nsec as NewNsec, Nsec3 as NewNsec3, Nsec3Param as NewNsec3Param, RecordData as NewRecordData,
 };
+use domain::new::base::utils::dst::UnsizedCopy;
 use domain::new::base::wire::SizePrefixed;
 use domain::new::base::{RType as NewRtype, TTL as NewTtl};
 use domain::rdata::dnssec::{RtypeBitmap, Timestamp};
@@ -39,7 +40,6 @@ use domain::rdata::nsec3::OwnerHash;
 use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
 use domain::utils::base32;
 use domain::zonefile::inplace::Entry;
-use domain_base::utils::dst::UnsizedCopy;
 use domain_kmip::dep::kmip_protocol::net::sync_pool::ConnPool;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;

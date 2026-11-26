@@ -6,12 +6,14 @@ use bytes::{BufMut, Bytes};
 use camino::Utf8Path;
 use domain::{
     base::{Name, ToName, iana::Class},
-    new::base::{Record, name::RevNameBuf, wire::ParseBytes},
+    new::base::{
+        Record,
+        name::RevNameBuf,
+        rdata::{BoxedRecordData, RecordData},
+        utils::dst::UnsizedCopy,
+        wire::ParseBytes,
+    },
     zonefile::inplace,
-};
-use domain_base::{
-    rdata::{BoxedRecordData, RecordData},
-    utils::dst::UnsizedCopy,
 };
 
 use crate::{

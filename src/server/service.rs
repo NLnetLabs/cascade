@@ -4,9 +4,9 @@ use std::sync::{Arc, RwLock};
 
 use domain::new::base::{
     name::{RevName, RevNameBuf},
+    utils::dst::UnsizedCopy,
     wire::ParseBytes,
 };
-use domain_base::utils::dst::UnsizedCopy;
 
 use crate::{
     zone::Zone,
