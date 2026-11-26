@@ -15,8 +15,8 @@ use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::new::base::Record;
 use domain::new::base::name::{NameBuf, RevNameBuf};
 use domain::new::base::rdata::Soa;
+use domain::new::base::utils::dst::UnsizedCopy;
 use domain::new::base::wire::{BuildBytes, ParseBytes};
-use domain::new::utils::dst::UnsizedCopy;
 use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 
