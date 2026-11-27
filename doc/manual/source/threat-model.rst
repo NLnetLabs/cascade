@@ -36,15 +36,15 @@ Cascade provides given that those assumptions are met.
 
 Cascade should:
 
-- retrieve zone data from an upstream nameserver in a reasonable time,
-- parse zone data correctly and in a reasonable time,
-- re-sign zones often enough to maintain the freshness of signatures
+- Retrieve zone data from an upstream nameserver in a reasonable time
+- Parse zone data correctly and in a reasonable time
+- Re-sign zones often enough to maintain the freshness of signatures
 
 -------------------
 General assumptions
 -------------------
 
-- The user uses authentic copies of cascade(d), dnst.
+- The user uses authentic copies of :program:`cascade(d)`, :program:`dnst`.
 - An adversary does not have local user access to the host machine Cascade
   runs on.
 - An adversary does not have access to key material (KSK/ZSK/CSK/TSIG).
@@ -61,9 +61,9 @@ Assumptions on input zone data
 ------------------------------
 
 - Input zone contents as received by Cascade are assumed to be what the
-  operators wants signed
+  operators wants signed,
 - Input zone contents are well-formed and suitable for DNSSEC signing (e.g.
-  free of NSEC3 collisions)
+  free of NSEC3 collisions).
 
 ---
 HSM
@@ -101,9 +101,9 @@ Cascade guarantees the following
 ================================
 
 - TSIG signed inputs are validated to detect tampering and rejected if invalid.
-- Cacade's output is a correct 'signed zone' (See Section 10 in RFC 9499) TODO: get wording from def.
-- Cascade's per-zone pipelines are independent while load is under signing capacity
-- Cascade does not crash
+- Cacade's output is a correct 'signed zone' (See Section 10 in :RFC:`9499`) TODO: get wording from def.
+- Cascade's per-zone pipelines are independent while load is under signing capacity.
+- Cascade does not crash.
 - Cascade publishes refreshed signatures early enough for propagation into caches.
 
 .. rubric:: Footnotes
