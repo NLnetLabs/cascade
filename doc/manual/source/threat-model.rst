@@ -22,6 +22,9 @@ established by cryptographic signatures through Transaction Signature (TSIG)
 keys, network segmentation, etc.
 
 .. image:: img/cascade-pipeline.svg
+   :width: 100%
+   :align: center
+   :alt: Cascade zone pipeline from loading through review, signing, and publication
 
 We have created a threat model for Cascade [#f1]_, where we outline the
 assumptions of the system that Cascade runs on, and the guarantees
