@@ -17,6 +17,7 @@ use domain::dnssec::sign::keys::keyset::UnixTime;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
 
+use crate::zone::instance::{ObsoleteLoadedInstance, ObsoleteSignedInstance};
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
@@ -37,7 +38,7 @@ use crate::units::zone_signer::faketime_or_now;
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
-mod instance;
+pub mod instance;
 pub use instance::{Instances, LoadedInstance, SignedInstance, SignedInstanceId};
 
 pub mod machine;
@@ -246,6 +247,7 @@ impl ZoneHandle<'_> {
     pub fn set_policy(&mut self, new: Arc<PolicyVersion>) {
         let _old = self.state.policy.replace(new.clone());
         self.signer().after_policy_change();
+        self.state.instances.after_policy_change(&new);
     }
 
     /// Persist the state of the zone immediately.
@@ -807,6 +809,134 @@ impl Zone {
 //     info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
 //     Ok(())
 // }
+
+//----------- InMemoryDiffTrimmer ----------------------------------------------
+
+/// State for trimming diffs of obsolete instances from memory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InMemoryDiffTrimmer {
+    /// The limits being enforced.
+    pub limits: InMemoryDiffLimits,
+
+    /// The number of diffs observed thus far.
+    pub num_diffs: u64,
+
+    /// The number of records observed thus far across all diffs.
+    pub num_records: u64,
+}
+
+impl InMemoryDiffTrimmer {
+    /// Construct a new trimmer.
+    #[must_use]
+    pub const fn new(limits: InMemoryDiffLimits) -> Self {
+        Self {
+            limits,
+            num_diffs: 0,
+            num_records: 0,
+        }
+    }
+
+    /// Account for the given loaded instance.
+    ///
+    /// If [`Self::exceeded()`] is true after this call, the diff in `instance`
+    /// (and the diffs in all following instances) should be trimmed.
+    pub fn account_loaded(&mut self, instance: &ObsoleteLoadedInstance) {
+        let ObsoleteLoadedInstance {
+            inner: _,
+            diff_size_into_next,
+            // NOTE: This method may be called before the diff is available.
+            diff_into_next: _,
+        } = instance;
+
+        let Some(diff_size_into_next) = diff_size_into_next else {
+            return;
+        };
+        // NOTE: The diffs of loaded instances do not appear in IXFRs from the
+        // publication server; they are merged into adjacent diffs of signed
+        // instances. So we don't need to count them here.
+        //self.num_diffs += 1;
+        self.num_records += diff_size_into_next.get();
+    }
+
+    /// Account for the given signed instance.
+    ///
+    /// If [`Self::exceeded()`] is true after this call, the diff in `instance`
+    /// (and the diffs in all following instances) should be trimmed.
+    pub fn account_signed(&mut self, instance: &ObsoleteSignedInstance) {
+        let ObsoleteSignedInstance {
+            inner: _,
+            diff_size_into_next,
+            // NOTE: This method may be called before the diff is available.
+            diff_into_next: _,
+        } = instance;
+
+        let Some(diff_size_into_next) = diff_size_into_next else {
+            return;
+        };
+        self.num_diffs += 1;
+        self.num_records += diff_size_into_next.get();
+    }
+
+    /// Whether limits have been exceeded.
+    #[must_use]
+    pub const fn exceeded(&self) -> bool {
+        if let Some(max) = self.limits.max_num_diffs
+            && self.num_diffs > max
+        {
+            return true;
+        }
+        if let Some(max) = self.limits.max_num_records
+            && self.num_records > max
+        {
+            return true;
+        }
+        false
+    }
+}
+
+//----------- InMemoryDiffLimits -----------------------------------------------
+
+/// Limits placed on in-memory diffs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InMemoryDiffLimits {
+    /// The maximum number of diffs to hold.
+    pub max_num_diffs: Option<u64>,
+
+    /// The maximum number of records to hold across all diffs.
+    pub max_num_records: Option<u64>,
+}
+
+impl InMemoryDiffLimits {
+    /// Compute the limits to use.
+    ///
+    /// `policy` is the policy currently in use. `latest` is the most recent
+    /// approved signed instance -- the current published instance, if
+    /// available, or the last persisted instance.
+    #[must_use]
+    pub fn compute(policy: &PolicyVersion, latest: &SignedInstance) -> Self {
+        let max_diffs_size_ratio = policy.server.outbound.max_diffs_size as f64 / 100.0;
+        let latest_size = latest.num_records().get();
+        let max_diffs_size = (max_diffs_size_ratio * latest_size as f64) as u64;
+
+        Self {
+            max_num_diffs: Some(policy.server.outbound.max_diffs as u64),
+            max_num_records: Some(max_diffs_size),
+        }
+    }
+
+    /// Whether these limits are weaker than others.
+    ///
+    /// Returns `true` iff `self` is guaranteed to retain more diffs than
+    /// `other`.
+    #[must_use]
+    pub fn is_weaker_than(&self, other: &Self) -> bool {
+        self.max_num_diffs
+            .is_none_or(|n| other.max_num_diffs.is_some_and(|m| n >= m))
+            && self
+                .max_num_records
+                .is_none_or(|n| other.max_num_records.is_some_and(|m| n >= m))
+    }
+}
 
 //----------- ZoneByName -------------------------------------------------------
 

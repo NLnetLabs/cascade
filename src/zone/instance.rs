@@ -40,7 +40,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use camino::Utf8PathBuf;
 use cascade_zonedata::{DiffData, SoaRecord};
 use domain::{
     base::Name,
@@ -50,6 +49,12 @@ use domain::{
     },
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use tracing::debug;
+
+use crate::{
+    policy::PolicyVersion,
+    zone::{InMemoryDiffLimits, InMemoryDiffTrimmer},
+};
 
 //----------- Instances --------------------------------------------------------
 
@@ -81,6 +86,9 @@ pub struct Instances {
     /// it will be moved to [`Self::current`] if/when restoration succeeds. If
     /// restoration fails, it is moved to [`Self::obsolete`].
     pub persisted: Option<PersistedInstance>,
+
+    /// A lost instance that was being built by Cascade before a restart.
+    pub lost_upcoming: Option<LostUpcomingInstance>,
 
     /// The next usable loaded instance ID.
     pub next_loaded_id: u64,
@@ -272,14 +280,13 @@ impl Instances {
     /// - There is no upcoming instance.
     /// - The upcoming instance is malformed.
     /// - A re-sign took place but there is no current loaded instance.
-    pub fn switch(&mut self) {
+    pub fn switch(&mut self, policy: &PolicyVersion) {
         let pub_time = SystemTime::now();
 
         let upcoming = self
             .upcoming
             .take()
             .unwrap_or_else(|| panic!("There is no upcoming instance"));
-        let current = self.current.take();
 
         match upcoming {
             // A re-sign took place.
@@ -291,7 +298,7 @@ impl Instances {
                     loaded,
                     signed: old_signed,
                     pub_time: _,
-                } = current.unwrap_or_else(|| {
+                } = self.current.take().unwrap_or_else(|| {
                     panic!("A re-sign took place but there is no current loaded instance")
                 });
 
@@ -310,6 +317,7 @@ impl Instances {
                     .latest_signed
                     .push_back(ObsoleteSignedInstance {
                         inner: old_signed,
+                        diff_size_into_next: NonZeroU64::new(signed_diff.num_records()),
                         diff_into_next: Some(signed_diff),
                     });
             }
@@ -344,11 +352,13 @@ impl Instances {
                         .latest_signed
                         .push_back(ObsoleteSignedInstance {
                             inner: old_signed,
+                            diff_size_into_next: NonZeroU64::new(signed_diff.num_records()),
                             diff_into_next: Some(signed_diff),
                         });
 
                     let loaded = ObsoleteLoadedInstance {
                         inner: old_loaded,
+                        diff_size_into_next: NonZeroU64::new(loaded_diff.num_records()),
                         diff_into_next: Some(loaded_diff),
                     };
                     let signed = std::mem::take(&mut self.obsolete.latest_signed);
@@ -364,6 +374,9 @@ impl Instances {
                 panic!("The upcoming instance is malformed")
             }
         }
+
+        // New obsolete diffs were added; discard excess ones.
+        self.discard_excess_diffs(policy);
     }
 
     /// Abandon the upcoming instance entirely.
@@ -371,12 +384,14 @@ impl Instances {
     /// ## Panics
     ///
     /// Panics if an upcoming instance does not exist.
-    pub fn abandon(&mut self) {
+    pub fn abandon(&mut self, zone_name: &Name<Bytes>, config: &crate::Config) {
         // TODO: Add the upcoming instance to a list of abandoned ones.
 
-        assert!(self.upcoming.is_some(), "Nothing to abandon");
+        let Some(upcoming) = self.upcoming.take() else {
+            panic!("Nothing to abandon")
+        };
 
-        self.upcoming = None;
+        let _ = upcoming.remove_persistence_files(zone_name, config);
     }
 }
 
@@ -419,11 +434,13 @@ impl Instances {
         };
         let signed = ObsoleteSignedInstance {
             inner: signed,
+            diff_size_into_next: None,
             diff_into_next: None,
         };
         self.obsolete.latest_signed.push_back(signed);
         let loaded = ObsoleteLoadedInstance {
             inner: loaded,
+            diff_size_into_next: None,
             diff_into_next: None,
         };
         let signed = std::mem::take(&mut self.obsolete.latest_signed);
@@ -434,6 +451,34 @@ impl Instances {
 }
 
 impl Instances {
+    /// Discard old in-memory diffs exceeding policy limits.
+    pub fn discard_excess_diffs(&mut self, policy: &PolicyVersion) {
+        // Look up information about the current signed instance (or the
+        // persisted one, if it has not been restored yet), as a basis for
+        // policy limits.
+        let latest = if let Some(current) = &self.current {
+            &current.signed
+        } else if let Some(persisted) = &self.persisted {
+            &persisted.signed
+        } else {
+            // We don't have enough information.
+            return;
+        };
+
+        let limits = InMemoryDiffLimits::compute(policy, latest);
+        self.obsolete.discard_excess_diffs(limits);
+    }
+}
+
+impl Instances {
+    /// React to a change in policy.
+    pub fn after_policy_change(&mut self, new: &PolicyVersion) {
+        // The policy for in-memory diffs might have changed.
+        // NOTE: We could check whether the relevant bits of policy have
+        // changed, but it's not that important.
+        self.discard_excess_diffs(new);
+    }
+
     /// Check invariants.
     pub fn check_invariants(&self) {
         let Self {
@@ -441,6 +486,7 @@ impl Instances {
             ref current,
             ref obsolete,
             ref persisted,
+            lost_upcoming: _,
             next_loaded_id,
         } = *self;
 
@@ -731,6 +777,36 @@ impl ObsoleteInstances {
             .or(self.per_load.back().map(|is| is.loaded.id))
     }
 
+    /// Discard old in-memory diffs exceeding the specified limits.
+    pub fn discard_excess_diffs(&mut self, limits: InMemoryDiffLimits) {
+        // Iterate from the newest to the oldest instances. Iterate loaded
+        // instances before the signed instances associated with them.
+        let mut trimmer = InMemoryDiffTrimmer::new(limits);
+        for i in self.latest_signed.iter_mut().rev() {
+            trimmer.account_signed(i);
+            if trimmer.exceeded() {
+                debug!(id = ?i.id, "Trimming diff for signed instance");
+                i.diff_into_next = None;
+            }
+        }
+        for is in self.per_load.iter_mut().rev() {
+            let i = &mut is.loaded;
+            trimmer.account_loaded(i);
+            if trimmer.exceeded() {
+                debug!(id = ?i.id, "Trimming diff for loaded instance");
+                i.diff_into_next = None;
+            }
+
+            for i in is.signed.iter_mut().rev() {
+                trimmer.account_signed(i);
+                if trimmer.exceeded() {
+                    debug!(id = ?i.id, "Trimming diff for signed instance");
+                    i.diff_into_next = None;
+                }
+            }
+        }
+    }
+
     /// Check invariants.
     pub fn check_invariants(&self) {
         assert!(
@@ -788,11 +864,16 @@ pub struct ObsoleteLoadedInstance {
     /// The inner loaded instance.
     pub inner: LoadedInstance,
 
+    /// The number of records in [`Self::diff_into_next`].
+    ///
+    /// If this is [`None`], information about the diff was lost.
+    pub diff_size_into_next: Option<NonZeroU64>,
+
     /// The diff of these contents, if available.
     ///
-    /// This diff transforms zone contents _from this instance_ into those
-    /// of _the succeeding loaded instance_. It is persisted to disk (at
-    /// [`LoadedInstance::diff_path()`]) and restored when Cascade starts up.
+    /// This diff transforms zone contents _from this instance_ into those of
+    /// _the succeeding loaded instance_. It is persisted to disk and restored
+    /// when Cascade starts up.
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
@@ -808,6 +889,7 @@ impl ObsoleteLoadedInstance {
             diff.check_invariants();
 
             assert_eq!(Some(&self.inner.soa), diff.removed_soa.as_ref());
+            assert_eq!(self.diff_size_into_next.unwrap().get(), diff.num_records());
         }
     }
 }
@@ -830,10 +912,12 @@ impl fmt::Debug for ObsoleteLoadedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             inner,
+            diff_size_into_next,
             diff_into_next,
         } = self;
         f.debug_struct("ObsoleteLoadedInstance")
             .field("inner", inner)
+            .field("diff_size_into_next", diff_size_into_next)
             // Hide the diff.
             .field(
                 "diff_into_next",
@@ -851,11 +935,16 @@ pub struct ObsoleteSignedInstance {
     /// The inner signed instance.
     pub inner: SignedInstance,
 
+    /// The number of records in [`Self::diff_into_next`].
+    ///
+    /// If this is [`None`], information about the diff was lost.
+    pub diff_size_into_next: Option<NonZeroU64>,
+
     /// The diff of these contents, if available.
     ///
-    /// This diff transforms zone contents _from this instance_ into those
-    /// of _the succeeding signed instance_. It is persisted to disk (at
-    /// [`SignedInstance::diff_path()`]) and restored when Cascade starts up.
+    /// This diff transforms zone contents _from this instance_ into those of
+    /// _the succeeding signed instance_. It is persisted to disk and restored
+    /// when Cascade starts up.
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
@@ -871,6 +960,7 @@ impl ObsoleteSignedInstance {
             diff.check_invariants();
 
             assert_eq!(Some(&self.inner.soa), diff.removed_soa.as_ref());
+            assert_eq!(self.diff_size_into_next.unwrap().get(), diff.num_records());
             // TODO: Verify `min_expiration` too?
         }
     }
@@ -894,10 +984,12 @@ impl fmt::Debug for ObsoleteSignedInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             inner,
+            diff_size_into_next,
             diff_into_next,
         } = self;
         f.debug_struct("ObsoleteSignedInstance")
             .field("inner", inner)
+            .field("diff_size_into_next", diff_size_into_next)
             // Hide the diff.
             .field(
                 "diff_into_next",
@@ -955,6 +1047,28 @@ impl PersistedInstance {
     }
 }
 
+//----------- LostUpcomingInstance ---------------------------------------------
+
+/// The instance of a zone that was being built the last time Cascade was
+/// running.
+///
+/// This type holds information about the [`UpcomingInstance`] from the
+/// _previous_ invocation of Cascade. It only exists if Cascade crashes or is
+/// restarted while building the instance. On startup, Cascade will clean up
+/// any leftover data from that instance (e.g. files on disk).
+#[derive(Debug, Clone)]
+pub struct LostUpcomingInstance {
+    /// The loaded instance.
+    ///
+    /// This describes the instance loaded from the zone source.
+    pub loaded: Option<LoadedInstance>,
+
+    /// The signed instance.
+    ///
+    /// This describes the signed instance generated by Cascade.
+    pub signed: Option<SignedInstance>,
+}
+
 //----------- LoadedInstance ---------------------------------------------------
 
 /// A loaded instance of a zone.
@@ -991,24 +1105,6 @@ impl LoadedInstance {
     /// The SOA serial of this instance.
     pub fn serial(&self) -> SoaSerial {
         self.soa.rdata.serial
-    }
-
-    /// A base name for persisted files for this instance.
-    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
-        format!("{zone_name}.L{}-SOA{}", self.id.0, self.serial().get())
-    }
-
-    /// The path to the persisted diff file, if any.
-    ///
-    /// If the diff for this instance (relative to the succeeding loaded
-    /// instance) has been persisted, it will be stored at this path.
-    pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
-        let mut path = config
-            .zone_state_dir
-            .join(self.persistence_basename(zone_name))
-            .into_string();
-        path.push_str(".diff");
-        path.into()
     }
 }
 
@@ -1080,29 +1176,6 @@ impl SignedInstance {
         self.num_generated_records
             .checked_add(self.num_loaded_records)
             .unwrap()
-    }
-
-    /// A base name for persisted files for this instance.
-    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
-        format!(
-            "{zone_name}.L{}-S{}-SOA{}",
-            self.id.0.0,
-            self.id.1,
-            self.serial().get()
-        )
-    }
-
-    /// The path to the persisted diff file, if any.
-    ///
-    /// If the diff for this instance (relative to the succeeding signed
-    /// instance) has been persisted, it will be stored at this path.
-    pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
-        let mut path = config
-            .zone_state_dir
-            .join(self.persistence_basename(zone_name))
-            .into_string();
-        path.push_str(".diff");
-        path.into()
     }
 }
 

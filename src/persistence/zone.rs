@@ -6,15 +6,20 @@ use std::{
     sync::Arc,
 };
 
+use bytes::Bytes;
+use camino::Utf8PathBuf;
 use cascade_zonedata::DiffData;
-use domain::new::base::SoaSerial;
-use tracing::{debug, info, trace, trace_span, warn};
+use domain::{base::Name, new::base::SoaSerial};
+use tracing::{debug, error, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
     persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
     util::BackgroundTasks,
-    zone::{SignedInstanceId, Zone, ZoneHandle, ZoneState},
+    zone::{
+        LoadedInstance, SignedInstance, SignedInstanceId, Zone, ZoneHandle, ZoneState,
+        instance::{LostUpcomingInstance, ObsoleteInstances, UpcomingInstance},
+    },
     zonedata::{LoadedZonePersister, SignedZonePersister, ZoneRestorer},
 };
 
@@ -48,6 +53,9 @@ impl ZonePersistenceHandle<'_> {
         // Mark the persisted instance as obsolete.
         self.state.instances.obsolete_persisted();
 
+        // Forget about the old snapshot, if any.
+        self.state.persistence.snapshot_id = None;
+
         // Remove any already enqueued signing operation that is blocked by
         // the ongoing restore as it will otherwise immediately start once the
         // restore completes.
@@ -58,6 +66,18 @@ impl ZonePersistenceHandle<'_> {
     }
 
     pub fn clear(&mut self) {
+        // Clear the upcoming instance, if any.
+        if let Some(instance) = &self.state.instances.upcoming {
+            let _ = instance.remove_persistence_files(&self.zone.name, &self.center.config);
+        }
+
+        // Clear all obsolete instances.
+        let _ = self
+            .state
+            .instances
+            .obsolete
+            .remove_persistence_files(&self.zone.name, &self.center.config);
+
         for file_info in self
             .state
             .persistence
@@ -982,5 +1002,231 @@ impl RelatedSignedDiff {
             diff,
             related_loaded_serial: loaded_serial.map(Into::into),
         }
+    }
+}
+
+//----------- Instances --------------------------------------------------------
+
+impl UpcomingInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        // TODO: Propagate error information **without short-circuiting**.
+        if let Some(loaded) = &self.loaded {
+            let _ = loaded.remove_persistence_files(zone_name, config);
+        }
+        if let Some(signed) = &self.signed {
+            let _ = signed.remove_persistence_files(zone_name, config);
+        }
+        Ok(())
+    }
+}
+
+impl ObsoleteInstances {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        // TODO: Propagate error information **without short-circuiting**.
+        for is in &self.per_load {
+            let _ = is.loaded.remove_persistence_files(zone_name, config);
+            for i in &is.signed {
+                let _ = i.remove_persistence_files(zone_name, config);
+            }
+        }
+        for i in &self.latest_signed {
+            let _ = i.remove_persistence_files(zone_name, config);
+        }
+        Ok(())
+    }
+}
+
+impl LostUpcomingInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        // TODO: Propagate error information **without short-circuiting**.
+        if let Some(loaded) = &self.loaded {
+            let _ = loaded.remove_persistence_files(zone_name, config);
+        }
+        if let Some(signed) = &self.signed {
+            let _ = signed.remove_persistence_files(zone_name, config);
+        }
+        Ok(())
+    }
+}
+
+impl LoadedInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        for path in [
+            self.diff_into_next_path(zone_name, config),
+            self.diff_from_prev_path(zone_name, config),
+            self.snapshot_path(zone_name, config),
+        ] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    debug!(%path, "Removed persistence file");
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    trace!(%path, "Persistence file does not exist");
+                }
+                Err(err) => {
+                    error!(%path, "Persistence file could not be removed: {err}");
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The path to the persisted prev-diff file, if any.
+    ///
+    /// If the diff *from this instance to the succeeding one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_into_next_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".into-next.diff");
+        path.into()
+    }
+
+    /// The path to the persisted diff file from the preceding instance.
+    ///
+    /// If the diff *from the preceding instance to this one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_from_prev_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".from-prev.diff");
+        path.into()
+    }
+
+    /// The path to the persisted snapshot at this instance, if any.
+    ///
+    /// If a snapshot for this instance has been persisted, it will be stored
+    /// at this path.
+    pub fn snapshot_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".snapshot");
+        path.into()
+    }
+
+    /// A base name for persisted files for this instance.
+    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
+        format!("{zone_name}.L{}-SOA{}", self.id.0, self.serial().get())
+    }
+}
+
+impl SignedInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        for path in [
+            self.diff_into_next_path(zone_name, config),
+            self.diff_from_prev_path(zone_name, config),
+            self.snapshot_path(zone_name, config),
+        ] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    debug!(%path, "Removed persistence file");
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    trace!(%path, "Persistence file does not exist");
+                }
+                Err(err) => {
+                    error!(%path, "Persistence file could not be removed: {err}");
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The path to the persisted prev-diff file, if any.
+    ///
+    /// If the diff *from this instance to the succeeding one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_into_next_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".into-next.diff");
+        path.into()
+    }
+
+    /// The path to the persisted diff file from the preceding instance.
+    ///
+    /// If the diff *from the preceding instance to this one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_from_prev_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".from-prev.diff");
+        path.into()
+    }
+
+    /// The path to the persisted snapshot at this instance, if any.
+    ///
+    /// If a snapshot for this instance has been persisted, it will be stored
+    /// at this path.
+    pub fn snapshot_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".snapshot");
+        path.into()
+    }
+
+    /// A base name for persisted files for this instance.
+    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
+        format!(
+            "{zone_name}.L{}-S{}-SOA{}",
+            self.id.0.0,
+            self.id.1,
+            self.serial().get()
+        )
     }
 }
