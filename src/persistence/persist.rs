@@ -6,14 +6,17 @@ use std::{
     sync::Arc,
 };
 
-use cascade_zonedata::{
-    DiffData, LoadedZonePersisted, LoadedZonePersister, RegularRecord, SignedZonePersisted,
-    SignedZonePersister, SoaRecord,
-};
+use cascade_zonedata::{DiffData, RegularRecord, SoaRecord};
 use domain::new::base::wire::{BuildBytes, TruncationError};
-use tracing::trace;
+use tracing::{debug, trace};
 
-use crate::{center::Center, persistence::discard_excess_diffs, zone::Zone};
+use crate::{
+    center::Center,
+    zone::{
+        Zone,
+        instance::{UpcomingInstance, UpcomingLoadedInstance},
+    },
+};
 
 /// Persist the data for a loaded instance of a zone.
 ///
@@ -24,58 +27,24 @@ use crate::{center::Center, persistence::discard_excess_diffs, zone::Zone};
     skip_all,
     fields(zone = %zone.name),
 )]
-pub fn persist_loaded(
-    zone: &Arc<Zone>,
-    center: &Arc<Center>,
-    persister: LoadedZonePersister,
-) -> LoadedZonePersisted {
-    let loaded_diff = persister.loaded_diff();
-    if !loaded_diff.is_empty() {
-        let mut handle = zone.write_handle(center);
-        let loaded_serial = loaded_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
-        let destination =
-            handle
-                .state
-                .persistence
-                .loaded_diffs
-                .push(zone, center, loaded_serial, None);
+pub fn persist_loaded(zone: &Arc<Zone>, center: &Arc<Center>, upcoming: &UpcomingLoadedInstance) {
+    debug!("Persisting the loaded instance");
 
-        // Update the set of persisted zone data file paths BEFORE writing
-        // the new file because if we crash/lose power between writing the new
-        // file and storing the updated set of paths:
-        //   - We would not know when restoring that a diff is missing.
-        //     This isn't ultimately a problem as we also would not ever
-        //     have served the updated zone from the publication server as
-        //     persistence has to complete before publication occurs.
-        //   - The new file would be unused but left behind on disk. It may
-        //     later be overwritten by a new diff but until then it would
-        //     be unused and also not removed by cleaning of diff files that
-        //     occurs if restoration fails, as the path would not be known
-        //     to us.
+    if upcoming.diff_from_prev.removed_soa.is_some() {
+        // Store a diff from the current to the upcoming instance.
+        let path = upcoming.diff_from_prev_path(&zone.name, &center.config);
+        persist_to_file(path.as_std_path(), &upcoming.diff_from_prev);
+    } else {
+        // There is no previous instance, so a diff is unhelpful; store a
+        // snapshot instead.
 
-        // TODO: Saving state first then writing the file could lead to a
-        // situation where a zone that was published consisting of a snapshot
-        // and N diffs would be discarded if the path to the N+1th diff was
-        // recorded in state and persisted but actually writing the N+1th
-        // diff file failed. On restore the file would be looked for and not
-        // found and all loaded and signed content including diffs would be
-        // discarded at that point. One way around this could be to track
-        // (e.g. using an Option field) that this path is in the process of
-        // being written but has not yet finished yet, and then on restore if
-        // the Option is Some the referred to path can just be deleted.
-        let _ = handle.get().save_state_now();
-        std::mem::drop(handle);
-
-        persist_to_file(&destination, loaded_diff.clone());
-
-        // We don't add the loaded diff to the in-memory store used for
-        // serving IXFR responses, that is done later in persist_signed() as
-        // the store is only used for answering requests to the publication
-        // server, and because if we add it here then abandon signing for some
-        // reason we would then have to remove the loaded diff that we added.
+        let path = upcoming.snapshot_path(&zone.name, &center.config);
+        // TODO: Use a snapshot-specific persistence function.
+        assert!(upcoming.diff_from_prev.removed_records.is_empty());
+        persist_to_file(path.as_std_path(), &upcoming.diff_from_prev);
     }
 
-    persister.mark_complete()
+    debug!("Persisting the loaded instance completed");
 }
 
 /// Persist the data for a signed instance of a zone.
@@ -87,66 +56,30 @@ pub fn persist_loaded(
     skip_all,
     fields(zone = %zone.name),
 )]
-pub fn persist_signed(
-    zone: &Arc<Zone>,
-    center: &Arc<Center>,
-    persister: SignedZonePersister,
-) -> SignedZonePersisted {
-    if !persister.signed_diff().is_empty() {
-        let loaded_diff = persister.loaded_diff();
-        let signed_diff = persister.signed_diff();
+pub fn persist_signed(zone: &Arc<Zone>, center: &Arc<Center>, upcoming: &UpcomingInstance) {
+    debug!("Persisting the signed instance");
 
-        let mut handle = zone.write_handle(center);
-        let loaded_serial =
-            loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
-        let signed_serial = signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
-        let destination =
-            handle
-                .state
-                .persistence
-                .signed_diffs
-                .push(zone, center, loaded_serial, signed_serial);
+    let upcoming = upcoming.signed.as_ref().unwrap();
+    if upcoming.diff_from_prev.removed_soa.is_some() {
+        // Store a diff from the current to the upcoming instance.
+        let path = upcoming.diff_from_prev_path(&zone.name, &center.config);
+        persist_to_file(path.as_std_path(), &upcoming.diff_from_prev);
+    } else {
+        // There is no previous instance, so a diff is unhelpful; store a
+        // snapshot instead.
 
-        // Update the set of persisted zone data file paths BEFORE writing
-        // the new file because if we crash/lose power between writing the new
-        // file and storing the updated set of paths:
-        //   - We would not know when restoring that a diff is missing.
-        //     This isn't ultimately a problem as we also would not ever
-        //     have served the updated zone from the publication server as
-        //     persistence has to complete before publication occurs.
-        //   - The new file would be unused but left behind on disk. It may
-        //     later be overwritten by a new diff but until then it would
-        //     be unused and also not removed by cleaning of diff files that
-        //     occurs if restoration fails, as the path would not be known
-        //     to us.
-
-        // TODO: Saving state first then writing the file could lead to a
-        // situation where a zone that was published consisting of a snapshot
-        // and N diffs would be discarded if the path to the N+1th diff was
-        // recorded in state and persisted but actually writing the N+1th
-        // diff file failed. On restore the file would be looked for and not
-        // found and all loaded and signed content including diffs would be
-        // discarded at that point. One way around this could be to track
-        // (e.g. using an Option field) that this path is in the process of
-        // being written but has not yet finished yet, and then on restore if
-        // the Option is Some the referred to path can just be deleted.
-        let _ = handle.get().save_state_now();
-        std::mem::drop(handle);
-
-        // Write the diff to disk as a binary AXFR snapshot or binary IXFR
-        // diff.
-        persist_to_file(&destination, signed_diff.clone());
-
-        // Store the diffs in-memory for serving IXFR out.
-        store_for_ixfr_out(center, zone, loaded_diff, signed_diff);
+        let path = upcoming.snapshot_path(&zone.name, &center.config);
+        // TODO: Use a snapshot-specific persistence function.
+        assert!(upcoming.diff_from_prev.removed_records.is_empty());
+        persist_to_file(path.as_std_path(), &upcoming.diff_from_prev);
     }
 
-    persister.mark_complete()
+    debug!("Persisting the signed instance completed");
 }
 
 //------------ persist_to_file() ----------------------------------------------
 
-pub fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
+pub fn persist_to_file(destination: &Path, diff: &DiffData) {
     persist_to_file_from_parts(
         destination,
         diff.removed_soa.clone(),
@@ -292,38 +225,4 @@ pub fn persist_to_file_from_parts<
         removed_soa.as_ref().map(|v| v.rdata.serial),
         added_soa.rdata.serial,
     );
-}
-
-//------------ store_for_ixfr_out() ------------------------------------------
-
-fn store_for_ixfr_out(
-    center: &Arc<Center>,
-    zone: &Arc<Zone>,
-    loaded_diff: Option<&Arc<DiffData>>,
-    signed_diff: &Arc<DiffData>,
-) {
-    // Only store a diff if the SOA from the previous version of the
-    // signed zone was removed and a new one added, otherwise this is not
-    // a diff to a previous version of the zone but actually a snapshot of
-    // the zone after having been signed for the first time.
-    // Ignore the diff if it is not acceptable, e.g. if it changes more than
-    // X% of the records in the zone or crosses some other threshold.
-    if signed_diff.removed_soa.is_some() && signed_diff.added_soa.is_some() {
-        store_diff(center, zone, loaded_diff, signed_diff);
-        discard_excess_diffs(center, zone);
-    }
-}
-
-fn store_diff(
-    center: &Arc<Center>,
-    zone: &Arc<Zone>,
-    loaded_diff: Option<&Arc<DiffData>>,
-    signed_diff: &Arc<DiffData>,
-) {
-    let loaded_serial = loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
-    let diffs = &mut zone.write(center).storage.diffs;
-    if let Some(loaded_diff) = loaded_diff {
-        diffs.store_loaded_diff(loaded_diff.clone());
-    }
-    diffs.store_signed_diff(loaded_serial, signed_diff.clone());
 }

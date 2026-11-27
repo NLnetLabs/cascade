@@ -326,15 +326,6 @@ pub struct Refreshes {
     pub enqueued: Option<EnqueuedRefresh>,
 }
 
-impl Refreshes {
-    /// Enqueue a refresh/reload.
-    ///
-    /// If one is already enqueued, the two will be merged.
-    pub fn enqueue(&mut self, refresh: EnqueuedRefresh) {
-        self.enqueued = self.enqueued.take().max(Some(refresh));
-    }
-}
-
 //----------- OngoingRefresh ---------------------------------------------------
 
 /// An ongoing refresh or reload of a zone.

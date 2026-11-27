@@ -2,195 +2,76 @@
 //!
 //! # Summary
 //!
-//! On approval of loaded or signed diffs the persister:
-//!   - Writes diffs to disk, so that Cascade can seamlessly resume operation
-//!     after a crash restart. Separate files are stored for loaded vs signed
-//!     data. Persistence files are stored alongside other state files for a
-//!     zone in the zone-state configuration path, with the set of currently
-//!     in-use persistence paths being stored in Cascade zone state.
-//!   - Stores diffs in memory, so that RFC 1995 IXFR requests can be
-//!     responded to with the set of diffs needed by the client.
+//! Zone contents are persisted to disk so that Cascade can reuse them when it
+//! restarts. This allows it to reuse record signatures, as recomputing them for
+//! the whole zone may be expensive. Cascade also persists the contents of zones
+//! as they are loaded (i.e. before signing), because it serves a view of that
+//! data from its loaded review server.
 //!
-//! When re-starting Cascade, lost in-memory zone and IXFR diff data will be
-//! restored from the disk files written by the persister.
+//! In addition to the most up-to-date data for a zone, Cascade also persists
+//! historical data: the data for obsolete instances of zones. Cascade can serve
+//! IXFR requests; by persisting old instances, it is able to continue doing so
+//! across restarts.
 //!
-//! In-memory diffs are discarded, oldest first, when configured limits are
-//! exceeded.
+//! Zone data is persisted in two forms: _snapshots_ and _diffs_. A snapshot is
+//! a complete copy of data; a diff stores the differences in data between two
+//! consecutive instances of a zone. Every zone has at most one snapshot, but
+//! any number of diffs.
 //!
-//! Persisted disk files are also discarded oldest first but after a delay
-//! to spread out the cost of "compacting" the zone (replacing the snapshot
-//! with a new one that contains the current set of published zone records).
+//! An instance of a zone persisted as a snapshot might not be the latest one.
+//! There may be newer instances of the zone, which are persisted as diffs.
+//! When starting up, Cascade will load the snapshot and then apply those diffs
+//! to it to rebuild an up-to-date view of the zone.
+//!
+//! As new instances are built over time, the set of diffs grows. This
+//! causes two problems: rebuilding an up-to-date view of the zone becomes
+//! slower over time, and disk usage grows. To address the former, Cascade
+//! periodically performs _compaction_, persisting a new snapshot of a more
+//! up-to-date instance and removing the old one. To address the latter,
+//! Cascade periodically trims the persisted diffs, removing old diffs past
+//! policy-defined limits.
 //!
 //! # Data format
 //!
-//! Data is persisted as AXFR and IXFR message ANSWER sections in wire format.
+//! Data is persisted as AXFR and IXFR message ANSWER sections in wire format,
+//! without name compression. Thus, they are compact binary files, and it should
+//! be possible to inspect and manipulate them by adapting existing DNS tools.
 //!
-//! # Persistence
+//! Every snapshot and diff is stored in a dedicated file, under Cascade's zone
+//! state directory. Diffs are assigned different file names based on their
+//! position relative to the snapshot (i.e. whether they lie before or after
+//! the snapshot). See e.g. [`LoadedInstance::diff_into_next_path()`].
 //!
-//! Persistence is invoked immediately after zone approval, either because of
-//! a successful review hook, or no review hook at all, or because the
-//! operator overrode a failed review hook.
-//!
-//! Persisted data is stored separately for records received while loading the
-//! zone vs changes that occur to the zone as a result of (re)signing it.
-//!
-//! For both loaded and signed changes, persistence stores an initial snapshot
-//! and a sequence of zero or more diffs:
-//!   - A loaded snapshot file is written immediately after approval of the
-//!     initial version of a zone is received, whether from disk or via
-//!     XFR-in. This file has the name `<zone-name>.loaded.0`.
-//!   - A loaded diff file is written each time the input zone is reloaded,
-//!     whether due to XFR-in or due to reloading of the input file from disk.
-//!     Loaded diff files are named `<zone-name>.loaded.N` where N > 0 and
-//!     increases by one each time a new diff is persisted.
-//!   - A signed snapshot file is written immediately after approval of the
-//!     first signed version of the zone resulting from full zone signing.
-//!     This file has the name `<zone-name>.signed.0`.
-//!   - A signed diff file is written each time the zone is re-signed, whether
-//!     due to changes in the input zone or changes in the signing keys or the
-//!     replacing of signatures for records whose signatures need refreshing.
-//!     Signed diff files are named `<zone-name>.signed.N` where N > 0 and
-//!     increases by one each time a new diff is persisted.
-//!
-//! After a diff is persisted successfully:
-//!   - The diff is stored in memory alongside the zone in
-//!     [`StorageState::diffs`](crate::zone::StorageState::diffs) so that it
-//!     can be served in response to an IXFR request from a downstream
-//!     nameserver.
-//!   - The path that the diff file was written to is appended to
-//!     [`PersistenceState::loaded_diffs`](crate::persistence::zone::PersistenceState::loaded_diffs) or
-//!     [`PersistenceState::signed_diffs`](crate::persistence::zone::PersistenceState::signed_diffs) and the zone state is
-//!     immediately saved to disk.
-//!
-//! # Panics
+//! # Failures
 //!
 //! If persistence fails due to an I/O error this will cause Cascade to panic.
 //! If the underlying storage that Cascade depends on is not reliable we have
 //! no way of knowing what else may be failing and abort as it is not safe to
 //! continue under such circumstances.
 //!
-//! # Compaction
-//!
-//! The `Compacter` replaces an existing snapshot and diffs with an
-//! up-tao-date snapshot. It may leave some diffs behind [1..N] such that entry
-//! 0 is still the snapshot but the first applicable diff is entry N. Diffs
-//! 1..N can be left behind in the case that they are still required to
-//! respond to IXFR requests but not for restoration (as they have been folded
-//! into the updated snapshot).
-//!
-//! Compaction is done as a background operation periodically. This is to
-//! prevent a situation where a rapdily changing large zone has to be locked
-//! for compaction after every small change and being a large zone the
-//! compaction process would be comparatively slow. Given that compaction is
-//! an optimization it does not need to be done on every change to the zone.
-//!
-//! # Restoration
-//!
-//! Zones are created in memory at Cascade startup in storage state
-//! `RestoringLoaded`. If the zone loader attempts to start loading the zone
-//! the load will fail because the zone storage is not yet in the `Passive`
-//! state. Instead a refresh will be enqueud and acted upon once the zone
-//! storage enters the `Passive` state.
-//!
-//! On startup Cascade starts a zone restorer which will attempt to restore
-//! all known zones. If restoration fails the zone will move to the `Passive`
-//! state and any subsequent load of data will be handled as usual. As long
-//! as the last used serial number was successfully persisted to state and
-//! restored from state the newly signed zone will receive a higher serial
-//! number than the last published zone that we failed to restore. Failure
-//! to restore also results in deletion of all persisted data for the zone
-//! and updating of the state to clear the paths to the no longer existing
-//! persisted data files. Failure to remove a persisted data file will be
-//! logged as a WARNing and Cascade will continue.
-//!
-//! Restoration of a zone is achieved by replacing the current (empty) zone
-//! content with the loaded snapshot, then applying each applicable loaded
-//! diff file to the snapshot one at a time. If the `Compacter` has folded
-//! diffs into the snapshot it may be that restoration must skip some diffs
-//! as they exist already in the snapshot and were kept only because they
-//! are still needed to respond to IXFR requests.
-//!
-//! Any diff that was available at a review server will have been lost.
-//! However as only approved data gets persisted, there should be no need
-//! to still be able to query the review server for an IXFR diff after
-//! Cascsade restarts.
-//!
-//! # Purging
-//!
-//! To avoid excess disk and memory usage, diffs in excess of configured
-//! limits are discarded.
-//!
-//! # Architecture
-//!
-//! - The zone storage state machine has states relating to persistence
-//!   and restoration and invokes code in this module to actually implement
-//!   those responsibilities.
-//! - IXFR diffs for use by the publication server are stored in zone
-//!   storage. IXFR diffs for use by the preview servers are accessed from
-//!   the in-memory temporary diffs held in review related storage machine
-//!   states.
-//! - Three "units" defined in this module are stored in `Center` and run
-//!   by `Manager`: `Persister`, `Restorer` and `Compacter`. Restorer runs
-//!   on startup. Compacter runs in the background continuously. Persister
-//!   does not "run" but instead provides callback `on_zone_policy_changed`.
-//! - The relationship between a signed diff and the loaded diff it
-//!   corresponds to is tracked both in persistence and in-memory diff state.
-//! - Persistence is done atomically, writing first to a temporary file and
-//!   then replacing any previous file with an atomic rename.
-//! - Diffs are stored and accessed using the same data type as already used
-//!   by Cascade to transport diffs between pipeline stages when needed,
-//!   namely `DiffData`.
-//! - `PersistenceState` per zone uses two instances of `PersistedDiffManager`
-//!   to keep track of persisted zone data files and implemements compaction
-//!   of a single zone. Compaction requires access to the latest published
-//!   version of a zone in order to replace the existing persisted snapshot
-//!   with an up-to-date version. Access to the published zone is done via the
-//!   viewer for the zone.
-//! - `IxfrZoneDiffs` stores diffs used when responding to an RFC 1995 IXFR
-//!   request, and offers lookup and trim operations.
-//!
-//! # TODO
-//!
-//! The current implementation could be improved by:
-//!
-//! - Removing next_idx and instead using a UUID to make persistence paths
-//!   unique. This would avoid the need for incrementing the id, and keeping
-//!   track of the last id both in memory and in persisted state.
-//! - Don't access and mutate the state of PersistedDiffManager from outside
-//!   the type as this makes it dangerous to change the way
-//!   PersistedDiffManager manipulates its own state as code outside
-//!   PersistedDiffManager may depend on assumptions about how the internal
-//!   state is constructed.
-//! - Track snapshots separately to diffs rather than treating the first diff
-//!   as a snapshot, to make it clearer which logic applies only to snapshots
-//!   which logic applies only to diffs, and which logic applies to both.
-//! - Track diffs left behind after compaction but still required for IXFR
-//!   responses separately to diffs that should be applied on restore to the
-//!   persistedsnapshot.
-//! - Storing persistent diff info could possibly be done as a Vec-like type
-//!   instead of as a BTreeSet. Attempts to do so introduced confusing error
-//!   prone index logic but that was before serial number relationships were
-//!   stored with diffs and included error prone assumptions involved in
-//!   attempting to determine such relationships from vec indices alone. It
-//!   may now require less and simpler index calculation logic. However, the
-//!   set type currrently also ensures no duplicate entries by diff path. If
-//!   next_idx were replaced by a UUID the paths would always be unique which
-//!   would diminish or remove the need for a 'set' type.
-//! - Make compaction occur when a zone is idle, rather than periodically.
+//! If restoration fails, Cascade will assume files may be corrupted, and it
+//! will remove all persistence files for the affected zone.
 
 use std::{sync::Arc, time::Duration};
 
 use cascade_zonedata::ZoneRestorer;
-use tracing::{debug, trace, warn};
+use tracing::{debug, warn};
 
 use crate::{
     center::Center,
     policy::PolicyVersion,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::AbortOnDrop,
-    zone::{OwnedZoneHandle, Zone, ZoneByName},
+    zone::{
+        OwnedZoneHandle, SignedInstanceId, Zone, ZoneByName,
+        instance::{ObsoleteInstances, PersistedInstance},
+    },
 };
 
+#[cfg(doc)]
+use crate::zone::LoadedInstance;
+
+mod compact;
 mod persist;
 mod restore;
 
@@ -209,26 +90,6 @@ impl Persister {
     /// Construct a new [`Persister`].
     pub fn new() -> Self {
         Self {}
-    }
-
-    pub fn on_zone_policy_changed(
-        &self,
-        center: &Arc<Center>,
-        zone: &Arc<Zone>,
-        old: Option<Arc<PolicyVersion>>,
-        new: Arc<PolicyVersion>,
-    ) {
-        if let Some(old) = old
-            && old.server.outbound.max_diffs <= new.server.outbound.max_diffs
-            && old.server.outbound.max_diffs_size <= new.server.outbound.max_diffs_size
-        {
-            // Nothing changed, at least not in a way that affects us.
-            // Increased diff limits doesn't require action, only a reduction
-            // in limits requires us to act.
-            return;
-        }
-
-        discard_excess_diffs(center, zone);
     }
 }
 
@@ -276,6 +137,9 @@ impl Compacter {
                         .map(|ZoneByName(z)| z.clone())
                         .collect::<Vec<_>>()
                 };
+
+                // TODO: Make compaction occur when a zone is idle, rather than
+                // periodically?
 
                 // Compact each zone one at a time.
                 // TODO: Add a configuration setting to control the maximum
@@ -341,6 +205,10 @@ impl Restorer {
                 // 'restorer' field is moved out over here.
                 let restorer = handle.state.storage.restorer.take().unwrap();
 
+                if let Some(instance) = &handle.state.instances.lost_upcoming {
+                    let _ =
+                        instance.remove_persistence_files(&handle.zone.name, &handle.center.config);
+                }
                 handle.persistence().start_restore(restorer);
             }
         }))
@@ -365,20 +233,32 @@ fn restore<'a>(
     zone: &'a Arc<Zone>,
     center: &'a Arc<Center>,
     mut restorer: ZoneRestorer,
+    policy: &PolicyVersion,
+    persisted: Option<&PersistedInstance>,
+    obsolete: &ObsoleteInstances,
+    snapshot_id: Option<SignedInstanceId>,
 ) -> OwnedZoneHandle<'a> {
     debug!("Attempting to restore persisted zone data");
 
     // Perform the underlying restore operation.
-    let result = restore::restore_both(zone, center, &mut restorer);
+    let result = restore::restore_both(
+        zone,
+        center,
+        &mut restorer,
+        policy,
+        persisted,
+        obsolete,
+        snapshot_id,
+    );
 
     let mut handle = zone.write_handle(center);
 
     let (loaded_reviewer, signed_reviewer, viewer) = match result {
-        Ok(true) => {
-            trace!(
-                "Restored diffs: {:?}",
-                handle.state.persistence.loaded_diffs
-            );
+        Ok(Some(restored)) => {
+            // Apply the collected changes to the zone state.
+            restored
+                .obsolete
+                .apply(&mut handle.state.instances.obsolete);
 
             let restored = restorer.finish().unwrap_or_else(|_| {
                 unreachable!("Zone restoration should have built new zone data")
@@ -392,7 +272,7 @@ fn restore<'a>(
             viewers
         }
 
-        Ok(false) => {
+        Ok(None) => {
             handle.persistence().reset_state_due_to_abandoned_restore();
             handle.storage().abandon_restoration(restorer)
         }
@@ -413,69 +293,4 @@ fn restore<'a>(
     handle.storage().on_passive();
 
     handle
-}
-
-//------------ discard_excess_diffs() ----------------------------------------
-
-/// Calculate from policy and published zone metadata the limits to apply
-/// and then trim zone diffs to be within those limits.
-//
-// TODO: Ideally this would be done as part of PersistentDiffManager::trim()
-// but PersistentDiffManager has no access to policy or instance signed
-// metadata.
-pub fn discard_excess_diffs(center: &Arc<Center>, zone: &Arc<Zone>) {
-    let mut state = zone.write(center);
-
-    if let Some(policy) = state.policy.as_ref()
-        && let Some(signed_metadata) = state.signed_metadata()
-    {
-        // Fetch diff purging settings from policy.
-        let max_diffs = policy.server.outbound.max_diffs;
-        let max_size_percentage = policy.server.outbound.max_diffs_size;
-
-        // Calculate the maximum number of records that a set of diffs can be based on
-        // the policy settings. IxfrZoneDiffs can't do this for us as it has
-        // no access to `last_published`.
-        let current_size = signed_metadata.num_records().get();
-        let max_size = calc_max_diff_size(max_size_percentage, current_size);
-
-        trace!(
-            "Discarding excess in-memory diffs for zone '{}' with settings max_diffs={max_diffs}, current_size={current_size}, max_size={max_size_percentage}% ({max_size} RRs)",
-            zone.name,
-        );
-        state.storage.diffs.trim(max_diffs, max_size);
-    }
-}
-
-/// Calculate the maximum size a diff can be as a percentage of the last
-/// published zone.
-fn calc_max_diff_size(max_size_percentage: usize, current_size: u64) -> usize {
-    let percentage = max_size_percentage as f64 / 100.0;
-    (current_size as f64 * percentage) as usize
-}
-
-#[cfg(test)]
-mod tests {
-    use super::calc_max_diff_size;
-
-    #[test]
-    pub fn test_calc_max_diff_size() {
-        let empty_zone = 0;
-        assert_eq!(calc_max_diff_size(0, empty_zone), 0);
-        assert_eq!(calc_max_diff_size(50, empty_zone), 0);
-        assert_eq!(calc_max_diff_size(100, empty_zone), 0);
-        assert_eq!(calc_max_diff_size(1000, empty_zone), 0);
-
-        let small_zone = 5;
-        assert_eq!(calc_max_diff_size(0, small_zone), 0);
-        assert_eq!(calc_max_diff_size(50, small_zone), 2);
-        assert_eq!(calc_max_diff_size(100, small_zone), 5);
-        assert_eq!(calc_max_diff_size(1000, small_zone), 50);
-
-        let large_zone = 500000;
-        assert_eq!(calc_max_diff_size(0, large_zone), 0);
-        assert_eq!(calc_max_diff_size(50, large_zone), 250000);
-        assert_eq!(calc_max_diff_size(100, large_zone), 500000);
-        assert_eq!(calc_max_diff_size(1000, large_zone), 5000000);
-    }
 }

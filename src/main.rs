@@ -47,9 +47,6 @@ mod units;
 mod util;
 mod zone;
 
-#[cfg(test)]
-pub mod tests;
-
 const MAX_SYSTEMD_FD_SOCKETS: usize = 32;
 
 fn main() -> ExitCode {
