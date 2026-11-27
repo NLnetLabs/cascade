@@ -67,7 +67,7 @@ default-features = false
 #
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain]
-version = "0.13.0"
+version = "0.13.1"
 
 # 'domain-kmip' offers KMIP support for DNSSEC signatures.
 #
