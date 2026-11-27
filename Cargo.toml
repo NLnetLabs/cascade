@@ -221,10 +221,6 @@ features = [
     "unstable-zonetree",
 ]
 
-[dependencies.domain-base]
-version = "0.13.0"
-features = ["alloc"]
-
 [dependencies.domain-kmip]
 workspace = true
 
