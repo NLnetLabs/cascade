@@ -338,6 +338,29 @@ fn check_policy(
         )));
     }
 
+    // Check that the effective lifetime of DNSKEY, CDS, CDNSKEY signatures
+    // is positive.
+    if policy.key_manager.dnskey_signature_lifetime
+        < policy.key_manager.dnskey_remain_time + policy.key_manager.default_ttl.as_secs()
+    {
+        return Err(PolicyReloadError::BadValue(format!(
+            "dnskey.signature-lifetime ({}) too small (<= dnskey.signature-remain-time ({}) + ttl ({}))",
+            policy.key_manager.dnskey_signature_lifetime,
+            policy.key_manager.dnskey_remain_time,
+            policy.key_manager.default_ttl.as_secs()
+        )));
+    }
+    if policy.key_manager.cds_signature_lifetime
+        < policy.key_manager.cds_remain_time + policy.key_manager.default_ttl.as_secs()
+    {
+        return Err(PolicyReloadError::BadValue(format!(
+            "cds.signature-lifetime ({}) too small (<= cds.signature-remain-time ({}) + ttl ({}))",
+            policy.key_manager.cds_signature_lifetime,
+            policy.key_manager.cds_remain_time,
+            policy.key_manager.default_ttl.as_secs()
+        )));
+    }
+
     Ok(())
 }
 
