@@ -1547,8 +1547,9 @@ impl KeySetCommand {
 
         if let Some(history_event) = history_event {
             // Record the error in the zone history
-            let zone = get_zone(&self.center, &self.name).unwrap();
-            record_zone_event(&self.center, &zone, history_event, None);
+            if let Some(zone) = get_zone(&self.center, &self.name) {
+                record_zone_event(&self.center, &zone, history_event, None);
+            }
         }
 
         res
