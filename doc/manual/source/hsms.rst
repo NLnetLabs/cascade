@@ -21,9 +21,9 @@ HSM Interfaces
 ~~~~~~~~~~~~~~
 
 In most cases, you interact with an HSM via an interface that is compliant
-with the Oasis PKCS#11 (Public-Key Cryptography Standard) specification. Some
-HSMs also or alternatively support a newer Oasis specification called KMIP
-(Key Management Interoperability Protocol).
+with the `Oasis PKCS#11`_ (Public-Key Cryptography Standard) specification.
+Some HSMs also or alternatively support a newer Oasis specification called
+`KMIP`_ (Key Management Interoperability Protocol).
 
 KMIP is a data (de)serialization protocol that operates on top of the widely
 used TCP and TLS combination of protocols. As such, it requires no additional
@@ -34,6 +34,9 @@ This is quite different to PKCS#11, which requires the HSM vendor to provide
 a library of code that offers a C language style interface to be used by the
 client at runtime by loading the library (a.k.a. module) into its own process
 with no knowledge of or control over what that code is going to do.
+
+.. _Oasis PKCS#11: https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=pkcs11
+.. _KMIP: https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=kmip
 
 Cascade and HSMs
 ----------------
@@ -52,34 +55,52 @@ To interact with a HSM over its PKCS#11 interface, Cascade sends KMIP requests
 to :program:`cascade-hsm-bridge`, which executes them against a loaded PKCS#11
 vendor library.
 
-Supported HSMs
---------------
+Compatible HSMs
+---------------
 
-In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
-To work with an HSM using its PKCS#11 interface, Cascade requires our
-:program:`cascade-hsm-bridge`.
+In principle any HSM supporting a compatible interface (PKCS#11 v2.40 or KMIP
+1.2), and that supports cryptographic algorithms used with DNSSEC, should
+be compatible with Cascade. To work with an HSM using its PKCS#11 interface,
+Cascade requires our :program:`cascade-hsm-bridge`.
 
-Several HSMs have been tested with Cascade by the community. Testing was limited to normal
-usage only, not attempting to deliberately cause problems, and not attempting
-to stress or performance test the interface. The tested HSMs are\:
+Tested HSMs
+-----------
 
-.. csv-table:: Supported HSMs
-   :header: Vendor, Model, Type, Interface, Guide
+Several HSMs have been tested with Cascade.
+
+.. note:: Testing was limited to normal usage only. When tested by the Cascade
+          team, support for :RFC:`9904#section-3` *"RECOMMENDED"* algorithms
+          RSASHA256, ECDSAP256SHA25 and ED25519 were checked and noted in the
+          table below. The Cascade team cannot attest to the compatibility of
+          HSMs tested by the community.
+
+.. csv-table:: Tested HSMs
+   :header: HSM, Type, Supports Recommended DNSSEC Algorithms, Guide
    :widths: auto
 
-   CardContact, SmartCard-HSM, "Smart Card", PKCS#11, :doc:`view <smartcard-hsm>`
-   Fortanix, DSM, Cloud, KMIP,
-   Nitrokey, NetHSM, "Server, Docker image", PKCS#11, :doc:`view <nethsm>`
-   Thales, "Cloud HSM", Cloud, PKCS#11, :doc:`view <thales>`
-   Securosys, "Primus HSM, CloudHSM", "Server, Cloud", "KMIP, PKCS#11", `view <https://docs.securosys.com/cascade/overview>`_
-   SoftHSM, "SoftHSM v2.6.1", Software, PKCS#11, :doc:`view <softhsm>`
-   Yubico, "YubiHSM 2", "USB key", PKCS#11,
+   `Amazon Cloud HSM`_, Cloud, Partial (no ED25519),  
+   `CardContact SmartCard-HSM`_, Smart Card, , :doc:`view <smartcard-hsm>`
+   `Fortanix DSM`_, Cloud, Yes,
+   `Latchset Kryoptic`_ v1.5, Software, Yes,
+   `Nitrokey NetHSM`_, "Server, Docker", Yes, :doc:`view <nethsm>`
+   `OpenKMIP PyKMIP`_ v0.1.0, Software, Partial (RSASHA256 only),
+   `Thales Luna Cloud HSM`_, Cloud, Yes, :doc:`view <thales>`
+   `Securosys Cloud HSM`_, Cloud, Yes, `view <https://docs.securosys.com/cascade/overview>`_
+   `Securosys Primus HSM`_, Server, , `view <https://docs.securosys.com/cascade/overview>`_
+   `SoftHSM`_ v2.6.1, Software, Yes, :doc:`view <softhsm>`
+   `Yubico YubiHSM 2`_, USB Key, Partial (no ED25519),
 
-.. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
-   though KMIP 1.2 requires servers to offer support for old versions of the
-   TLS protocol with known security vulnerabilities. For this reason, PyKMIP
-   is **NOT** supported by Cascade as it only supports older vulnerable TLS
-   versions.
+.. _Amazon Cloud HSM: https://aws.amazon.com/cloudhsm/
+.. _CardContact SmartCard-HSM: https://www.smartcard-hsm.com/
+.. _Fortanix DSM: https://www.fortanix.com/platform/data-security-manager
+.. _Latchset Kryoptic: https://github.com/latchset/kryoptic
+.. _Nitrokey NetHSM: https://www.nitrokey.com/products/nethsm
+.. _OpenKMIP PyKMIP: https://github.com/OpenKMIP/PyKMIP
+.. _Thales Luna Cloud HSM: https://cpl.thalesgroup.com/encryption/data-protection-on-demand/services/luna-cloud-hsm
+.. _Securosys Cloud HSM: https://www.securosys.com/cloud-security/cloudhsm-overview
+.. _Securosys Primus HSM: https://www.securosys.com/en/hsm/hsm-overview
+.. _SoftHSM: https://www.softhsm.org/
+.. _Yubico YubiHSM 2: https://www.yubico.com/products/hardware-security-module/
 
 Known quirks
 ~~~~~~~~~~~~
