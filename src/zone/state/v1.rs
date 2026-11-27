@@ -14,10 +14,10 @@ use domain::dep::octseq::Array;
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::new::base::Record;
 use domain::new::base::name::{NameBuf, RevNameBuf};
+use domain::new::base::rdata::Soa;
+use domain::new::base::utils::dst::UnsizedCopy;
 use domain::new::base::wire::{BuildBytes, ParseBytes};
-use domain::new::rdata::Soa;
 use domain::tsig::KeyName;
-use domain::utils::dst::UnsizedCopy;
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;

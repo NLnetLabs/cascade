@@ -44,10 +44,7 @@ use camino::Utf8PathBuf;
 use cascade_zonedata::{DiffData, SoaRecord};
 use domain::{
     base::Name,
-    new::{
-        base::{RType, SoaSerial},
-        rdata::RecordData,
-    },
+    new::base::{RType, SoaSerial, rdata::RecordData},
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 

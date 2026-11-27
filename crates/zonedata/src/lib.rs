@@ -156,15 +156,13 @@ use domain::new::base::compat::Ttl;
 use domain::new::base::compat::iana::Class;
 use domain::{
     base::{ToName, name::FlattenInto},
-    new::{
-        base::{
-            CanonicalRecordData, RType,
-            name::{Name, NameBuf, RevName, RevNameBuf},
-            wire::{BuildBytes, ParseBytes},
-        },
+    new::base::{
+        CanonicalRecordData, RType,
+        name::{Name, NameBuf, RevName, RevNameBuf},
         rdata::{BoxedRecordData, RecordData, Soa},
+        utils::dst::UnsizedCopy,
+        wire::{BuildBytes, ParseBytes},
     },
-    utils::dst::UnsizedCopy,
 };
 
 pub mod storage;

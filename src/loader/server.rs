@@ -21,19 +21,17 @@ use domain::{
             protocol::{XfrResponseInterpreter, XfrZoneUpdateIterator},
         },
     },
-    new::{
-        base::{
-            HeaderFlags, Message, MessageItem, QClass, QType, Question, RClass, RType, Record,
-            SoaSerial,
-            build::MessageBuilder,
-            name::{Name, NameCompressor, RevNameBuf},
-            wire::{AsBytes, ParseBytes, ParseBytesZC, ParseError},
-        },
+    new::base::{
+        HeaderFlags, Message, MessageItem, QClass, QType, Question, RClass, RType, Record,
+        SoaSerial,
+        build::MessageBuilder,
+        name::{Name, NameCompressor, RevNameBuf},
         rdata::RecordData,
+        utils::dst::UnsizedCopy,
+        wire::{AsBytes, ParseBytes, ParseBytesZC, ParseError},
     },
     rdata::AllRecordData,
     tsig,
-    utils::dst::UnsizedCopy,
     zonetree::types::ZoneUpdate,
 };
 use tokio::net::TcpStream;
